@@ -11,7 +11,6 @@ import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
-import net.minecraft.util.math.Box;
 import org.joml.Matrix4f;
 
 import java.util.HashMap;
@@ -54,10 +53,10 @@ public class LeaderboardBlockEntityRenderer implements BlockEntityRenderer<Leade
                 ADV_X + 0.5, HEAD_TEXT_Y, 0.5, 0xFFFFD700);
     }
 
-    /** Expand the culling box - default is roughly one block, far too small for two full-height models. */
+    /** The two models stand well outside the block's own box, so never cull on it. */
     @Override
-    public Box getRenderBoundingBox(LeaderboardBlockEntity blockEntity) {
-        return new Box(blockEntity.getPos()).expand(4.0);
+    public boolean rendersOutsideBoundingBox(LeaderboardBlockEntity blockEntity) {
+        return true;
     }
 
     private void drawLine(MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light,
