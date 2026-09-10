@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "statsboard",
+  "version": "${version}",
+  "name": "Statsboard",
+  "description": "Adds a /leaderboard command that tracks and displays the top players for deaths and advancements.",
+  "authors": [
+    "You"
+  ],
+  "contact": {},
+  "license": "CC0-1.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.statsboard.StatsboardMod"
+    ],
+    "client": [
+      "com.statsboard.StatsboardModClient"
+    ]
+  },
+  "mixins": [
+    "statsboard.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api": "*",
+    "minecraft": "~1.20.1",
+    "java": ">=17"
+  }
+}

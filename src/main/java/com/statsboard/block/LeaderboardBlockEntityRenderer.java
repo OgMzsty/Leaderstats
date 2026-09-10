@@ -1,0 +1,106 @@
+package com.statsboard.block;
+
+import com.mojang.authlib.GameProfile;
+import com.mojang.authlib.properties.Property;
+import com.statsboard.mixin.PlayerEntityAccessor;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.network.OtherClientPlayerEntity;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.block.entity.BlockEntityRenderer;
+import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.world.ClientWorld;
+import net.minecraft.util.math.Box;
+import org.joml.Matrix4f;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Draws two full player-height character models side by side, each with
+ * their name/stat line floating directly above their head. Text is
+ * billboarded (always faces the camera); the player models are not, since
+ * they should look like normal 3D characters standing in the world.
+ */
+public class LeaderboardBlockEntityRenderer implements BlockEntityRenderer<LeaderboardBlockEntity> {
+    private static final double DEATH_X = -1.0;
+    private static final double ADV_X = 2.0;
+    private static final double HEAD_TEXT_Y = 2.3;
+
+    private final TextRenderer textRenderer;
+    private final Map<UUID, OtherClientPlayerEntity> entityCache = new HashMap<>();
+
+    public LeaderboardBlockEntityRenderer(BlockEntityRendererFactory.Context ctx) {
+        this.textRenderer = ctx.getTextRenderer();
+    }
+
+    @Override
+    public void render(LeaderboardBlockEntity entity, float tickDelta, MatrixStack matrices,
+                        VertexConsumerProvider vertexConsumers, int light, int overlay) {
+        drawPlayerModel(matrices, vertexConsumers, light, tickDelta,
+                entity.getTopDeathUuid(), entity.getTopDeathName(),
+                entity.getTopDeathSkinValue(), entity.getTopDeathSkinSignature(), DEATH_X, 0.0, 0.5);
+        drawPlayerModel(matrices, vertexConsumers, light, tickDelta,
+                entity.getTopAdvUuid(), entity.getTopAdvName(),
+                entity.getTopAdvSkinValue(), entity.getTopAdvSkinSignature(), ADV_X, 0.0, 0.5);
+
+        drawLine(matrices, vertexConsumers, light,
+                "\u2620 " + entity.getTopDeathName() + "  (" + entity.getTopDeathCount() + ")",
+                DEATH_X + 0.5, HEAD_TEXT_Y, 0.5, 0xFFFF5555);
+        drawLine(matrices, vertexConsumers, light,
+                "\u2605 " + entity.getTopAdvName() + "  (" + entity.getTopAdvCount() + ")",
+                ADV_X + 0.5, HEAD_TEXT_Y, 0.5, 0xFFFFD700);
+    }
+
+    /** Expand the culling box - default is roughly one block, far too small for two full-height models. */
+    @Override
+    public Box getRenderBoundingBox(LeaderboardBlockEntity blockEntity) {
+        return new Box(blockEntity.getPos()).expand(4.0);
+    }
+
+    private void drawLine(MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light,
+                           String text, double x, double y, double z, int color) {
+        matrices.push();
+        matrices.translate(x, y, z);
+        matrices.multiply(MinecraftClient.getInstance().gameRenderer.getCamera().getRotation());
+        matrices.scale(-0.02f, -0.02f, 0.02f);
+
+        Matrix4f matrix = matrices.peek().getPositionMatrix();
+        float width = textRenderer.getWidth(text);
+        int backgroundColor = (int) (0.25f * 255f) << 24;
+
+        textRenderer.draw(text, -width / 2f, 0, color, false, matrix, vertexConsumers,
+                TextRenderer.TextLayerType.SEE_THROUGH, backgroundColor, light);
+
+        matrices.pop();
+    }
+
+    private void drawPlayerModel(MatrixStack matrices, VertexConsumerProvider vertexConsumers, int light,
+                                  float tickDelta, UUID uuid, String name, String skinValue,
+                                  String skinSignature, double x, double y, double z) {
+        if (uuid == null) {
+            return;
+        }
+        ClientWorld world = MinecraftClient.getInstance().world;
+        if (world == null) {
+            return;
+        }
+        OtherClientPlayerEntity previewEntity = entityCache.computeIfAbsent(uuid, id -> {
+            GameProfile profile = new GameProfile(id, name);
+            if (skinValue != null && !skinValue.isEmpty()) {
+                profile.getProperties().put("textures", new Property("textures", skinValue, skinSignature));
+            }
+            OtherClientPlayerEntity e = new OtherClientPlayerEntity(world, profile);
+            e.getDataTracker().set(PlayerEntityAccessor.getPlayerModelParts(), (byte) 0x7F);
+            return e;
+        });
+
+        matrices.push();
+        matrices.translate(x, y, z);
+        MinecraftClient.getInstance().getEntityRenderDispatcher().render(
+                previewEntity, 0.0, 0.0, 0.0, 0f, tickDelta, matrices, vertexConsumers, light);
+        matrices.pop();
+    }
+}

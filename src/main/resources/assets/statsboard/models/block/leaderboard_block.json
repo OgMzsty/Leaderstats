@@ -1,0 +1,149 @@
+{
+  "credit": "Made with Blockbench",
+  "texture_size": [
+    32,
+    32
+  ],
+  "textures": {
+    "0": "statsboard:block/leaderboard_block",
+    "particle": "statsboard:block/leaderboard_block"
+  },
+  "elements": [
+    {
+      "from": [
+        1,
+        0,
+        2
+      ],
+      "to": [
+        14,
+        1.5,
+        15
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            13,
+            0,
+            26,
+            2
+          ],
+          "texture": "#0"
+        },
+        "east": {
+          "uv": [
+            13,
+            2,
+            26,
+            4
+          ],
+          "texture": "#0"
+        },
+        "south": {
+          "uv": [
+            13,
+            4,
+            26,
+            6
+          ],
+          "texture": "#0"
+        },
+        "west": {
+          "uv": [
+            13,
+            6,
+            26,
+            8
+          ],
+          "texture": "#0"
+        },
+        "up": {
+          "uv": [
+            13,
+            13,
+            0,
+            0
+          ],
+          "texture": "#0"
+        },
+        "down": {
+          "uv": [
+            13,
+            13,
+            0,
+            26
+          ],
+          "texture": "#0"
+        }
+      }
+    },
+    {
+      "from": [
+        5.5,
+        1.25,
+        6.5
+      ],
+      "to": [
+        9.5,
+        3,
+        10.5
+      ],
+      "faces": {
+        "north": {
+          "uv": [
+            13,
+            16,
+            17,
+            18
+          ],
+          "texture": "#0"
+        },
+        "east": {
+          "uv": [
+            17,
+            8,
+            21,
+            10
+          ],
+          "texture": "#0"
+        },
+        "south": {
+          "uv": [
+            17,
+            10,
+            21,
+            12
+          ],
+          "texture": "#0"
+        },
+        "west": {
+          "uv": [
+            17,
+            12,
+            21,
+            14
+          ],
+          "texture": "#0"
+        },
+        "up": {
+          "uv": [
+            17,
+            12,
+            13,
+            8
+          ],
+          "texture": "#0"
+        },
+        "down": {
+          "uv": [
+            17,
+            12,
+            13,
+            16
+          ],
+          "texture": "#0"
+        }
+      }
+    }
+  ]
+}

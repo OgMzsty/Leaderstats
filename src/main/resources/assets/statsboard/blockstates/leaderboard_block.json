@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "statsboard:block/leaderboard_block" }
+  }
+}
