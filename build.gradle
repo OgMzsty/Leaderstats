@@ -50,8 +50,10 @@ publishMods {
 
 	modrinth {
 		accessToken = providers.environmentVariable("MODRINTH_TOKEN")
-		// Slug rather than the base62 id: the project is not public yet, so the
-		// id cannot be read from the API. Modrinth accepts a slug here.
+		// FIXME: the plugin rejects this with "leaderstats is not a valid Modrinth
+		// ID". It needs the base62 id, which is not readable from the API while the
+		// project is still a draft. Replace with the Project ID from
+		// modrinth.com/mod/leaderstats/settings before a live publish.
 		projectId = "leaderstats"
 		minecraftVersions.add("1.20.1")
 		requires { slug = "fabric-api" }
