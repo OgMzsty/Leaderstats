@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="img/logo.png" width="320" alt="logo">
+<img src="img/logo.png" width="240" alt="logo">
 
 ### Death and advancement leaderboards, with the top two stood in your world.
 
@@ -19,9 +19,9 @@
 
 Counts every death and every completed advancement on the server.
 
-Read the totals in chat with `/leaderboard`, or open the GUI with `/showleaderboard`.
-Better, plant a board somewhere and the two leaders stand there in person, wearing their
-own skins.
+Read the totals in chat with `/leaderboard`, or open the GUI with `/showleaderboard` or a
+key of your choosing. Better, plant a board somewhere and the two leaders stand there in
+person, wearing their own skins.
 
 The counting is server side and survives restarts. The GUI and the world models are drawn
 client side, so anyone who wants those needs the mod as well.
