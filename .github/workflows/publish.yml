@@ -1,0 +1,21 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Upload nothing, just prove the build and config'
+        type: boolean
+        default: true
+  release:
+    types: [ published ]
+
+jobs:
+  publish:
+    uses: duzos/mod-ci/.github/workflows/publish.yml@v1
+    secrets: inherit
+    with:
+      targets: '[{}]'
+      java: '17'
+      task: 'publishMods'
+      dry_run: ${{ inputs.dry_run || false }}
