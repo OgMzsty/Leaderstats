@@ -1,6 +1,7 @@
 plugins {
 	id 'fabric-loom' version '1.6-SNAPSHOT'
 	id 'maven-publish'
+	id 'me.modmuss50.mod-publish-plugin' version '2.1.1'
 }
 
 version = project.mod_version
@@ -33,4 +34,36 @@ java {
 	withSourcesJar()
 	sourceCompatibility = JavaVersion.VERSION_17
 	targetCompatibility = JavaVersion.VERSION_17
+}
+
+publishMods {
+	file = tasks.named('remapJar').flatMap { it.archiveFile }
+	changelog = providers.fileContents(project.layout.projectDirectory.file("CHANGELOG.md")).asText
+	type = STABLE
+	version = "${project.version}-${project.minecraft_version}"
+	displayName = "Leaderstats ${project.version} (${project.minecraft_version} Fabric)"
+	modLoaders.add("fabric")
+
+	// Driven by the shared publish workflow. When true nothing is uploaded and
+	// the release assets are written to the build directory instead.
+	dryRun = providers.environmentVariable("PUBLISH_DRY_RUN").map { it == "true" }.getOrElse(false)
+
+	modrinth {
+		accessToken = providers.environmentVariable("MODRINTH_TOKEN")
+		// Slug rather than the base62 id: the project is not public yet, so the
+		// id cannot be read from the API. Modrinth accepts a slug here.
+		projectId = "leaderstats"
+		minecraftVersions.add("1.20.1")
+		requires { slug = "fabric-api" }
+	}
+
+	curseforge {
+		accessToken = providers.environmentVariable("CURSEFORGE_TOKEN")
+		projectId = "1688382"
+		projectSlug = "leaderstats"
+		minecraftVersions.add("1.20.1")
+		clientRequired = true
+		serverRequired = true
+		requires { slug = "fabric-api" }
+	}
 }
