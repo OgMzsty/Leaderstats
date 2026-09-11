@@ -5,6 +5,15 @@
 
   "statsboard.stat.advancements": "Advancements",
 
+  "statsboard.stat_type.mined": "%s Mined",
+  "statsboard.stat_type.crafted": "%s Crafted",
+  "statsboard.stat_type.used": "%s Used",
+  "statsboard.stat_type.broken": "%s Broken",
+  "statsboard.stat_type.picked_up": "%s Picked Up",
+  "statsboard.stat_type.dropped": "%s Dropped",
+  "statsboard.stat_type.killed": "%s Killed",
+  "statsboard.stat_type.killed_by": "Killed by %s",
+
   "statsboard.picker.title": "Choose a statistic",
   "statsboard.picker.general": "General",
   "statsboard.picker.items": "Items",

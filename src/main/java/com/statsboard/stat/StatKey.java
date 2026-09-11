@@ -13,6 +13,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Identifies one leaderboard stat: a vanilla stat type plus a value within
@@ -35,6 +36,17 @@ public record StatKey(Identifier typeId, Identifier valueId) {
             new StatKey(SPECIAL_TYPE, new Identifier("statsboard", "advancements"));
     public static final StatKey DEATHS =
             new StatKey(new Identifier("minecraft", "custom"), new Identifier("minecraft", "deaths"));
+
+    /** Vanilla stat types we supply our own label for; see displayName. */
+    private static final Set<Identifier> LABELLED_TYPES = Set.of(
+            new Identifier("minecraft", "mined"),
+            new Identifier("minecraft", "crafted"),
+            new Identifier("minecraft", "used"),
+            new Identifier("minecraft", "broken"),
+            new Identifier("minecraft", "picked_up"),
+            new Identifier("minecraft", "dropped"),
+            new Identifier("minecraft", "killed"),
+            new Identifier("minecraft", "killed_by"));
 
     /** True for the advancement pseudo-stat, which has no backing vanilla Stat. */
     public boolean isAdvancements() {
@@ -111,6 +123,14 @@ public record StatKey(Identifier typeId, Identifier valueId) {
             name = Text.literal(valueId.toString());
         }
 
+        // Vanilla's own stat_type keys are not usable as labels: killed and
+        // killed_by are sentence templates ("You killed %s %s"), so rendering
+        // them without arguments leaks raw placeholders, and the rest read
+        // backwards when appended after the name ("Times Mined Diamond Ore").
+        // Our own keys take the name as an argument instead.
+        if (LABELLED_TYPES.contains(typeId)) {
+            return Text.translatable("statsboard.stat_type." + typeId.getPath(), name);
+        }
         return Text.translatable(type.getTranslationKey()).append(" ").append(name);
     }
 
