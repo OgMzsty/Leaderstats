@@ -19,6 +19,9 @@ public class StatsboardNetworking {
     /** C2S: retarget one column of a leaderboard block. */
     public static final Identifier SET_BLOCK_STAT = new Identifier("statsboard", "set_block_stat");
 
+    /** C2S: grow or shrink a leaderboard block's column count. */
+    public static final Identifier SET_COLUMN_COUNT = new Identifier("statsboard", "set_column_count");
+
     /** S2C: open the picker for a leaderboard block the player just poked. */
     public static final Identifier OPEN_PICKER = new Identifier("statsboard", "open_picker");
 

@@ -9,13 +9,15 @@
   "statsboard.picker.general": "General",
   "statsboard.picker.items": "Items",
   "statsboard.picker.mobs": "Mobs",
-  "statsboard.picker.search": "Search...",
+  "statsboard.picker.search": "Search stats...",
   "statsboard.picker.no_matches": "No matches.",
 
   "statsboard.config.title": "Leaderboard columns",
   "statsboard.config.column": "Column %s",
+  "statsboard.config.count": "Columns: %s",
 
   "statsboard.screen.change_stat": "Change stat...",
+  "statsboard.screen.no_data": "No data yet.",
 
   "statsboard.hint.client_required": "Install Leaderstats to change this board, or use /leaderboard"
 }

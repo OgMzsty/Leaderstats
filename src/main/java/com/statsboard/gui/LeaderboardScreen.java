@@ -145,14 +145,14 @@ public class LeaderboardScreen extends Screen {
 
         context.getMatrices().pop();
 
-        drawStyledButton(context, deathsTabX, tabsY, tabWidth, tabHeight, "Deaths",
+        drawStyledButton(context, deathsTabX, tabsY, tabWidth, tabHeight, StatKey.DEATHS.displayName(),
                 StatKey.DEATHS.equals(statKey), isInside(mouseX, mouseY, deathsTabX, tabsY, tabWidth, tabHeight));
-        drawStyledButton(context, advTabX, tabsY, tabWidth, tabHeight, "Advancements",
+        drawStyledButton(context, advTabX, tabsY, tabWidth, tabHeight, StatKey.ADVANCEMENTS.displayName(),
                 StatKey.ADVANCEMENTS.equals(statKey),
                 isInside(mouseX, mouseY, advTabX, tabsY, tabWidth, tabHeight));
-        drawStyledButton(context, pickerX, tabsY, tabWidth, tabHeight, "Change stat...",
+        drawStyledButton(context, pickerX, tabsY, tabWidth, tabHeight, Text.translatable("statsboard.screen.change_stat"),
                 false, isInside(mouseX, mouseY, pickerX, tabsY, tabWidth, tabHeight));
-        drawStyledButton(context, closeX, closeY, closeWidth, closeHeight, "Close",
+        drawStyledButton(context, closeX, closeY, closeWidth, closeHeight, Text.translatable("gui.done"),
                 false, isInside(mouseX, mouseY, closeX, closeY, closeWidth, closeHeight));
 
         super.render(context, mouseX, mouseY, delta);
@@ -171,7 +171,7 @@ public class LeaderboardScreen extends Screen {
     }
 
     /** Same bordered-gradient look as the panels, so the buttons read as part of the same UI. */
-    private void drawStyledButton(DrawContext context, int x, int y, int w, int h, String label,
+    private void drawStyledButton(DrawContext context, int x, int y, int w, int h, Text label,
                                    boolean active, boolean hovered) {
         context.fill(x - 2, y - 2, x + w + 2, y + h + 2, 0xFF1A1A22);
 
@@ -212,7 +212,8 @@ public class LeaderboardScreen extends Screen {
         int contentBottom = y + height - 4;
 
         if (list.isEmpty()) {
-            context.drawTextWithShadow(this.textRenderer, "No data yet.", x + 8, contentTop + 4, 0xFFAAAAAA);
+            context.drawTextWithShadow(this.textRenderer, Text.translatable("statsboard.screen.no_data"),
+                    x + 8, contentTop + 4, 0xFFAAAAAA);
             return;
         }
 

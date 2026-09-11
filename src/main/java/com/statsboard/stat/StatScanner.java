@@ -171,12 +171,16 @@ public final class StatScanner {
         for (Map.Entry<UUID, Path> entry : listPlayerFiles(statsDir).entrySet()) {
             UUID uuid = entry.getKey();
             known.add(uuid);
-            // Online players' files churn on every autosave and StatQuery
-            // overrides them with live values anyway, so parsing them is waste.
-            if (online.contains(uuid)) {
+            CachedStats cached = statCache.get(uuid);
+            // An online player's file churns on every autosave and StatQuery
+            // overrides it with live values, so re-reading it is waste - but the
+            // previous parse still has to be republished. Dropping it would make
+            // the player vanish from every board the instant they log off, which
+            // is worst for whoever just took the top spot.
+            if (online.contains(uuid) && cached != null) {
+                values.put(uuid, cached.values);
                 continue;
             }
-            CachedStats cached = statCache.get(uuid);
             long modified = lastModified(entry.getValue());
             if (cached == null || cached.modified != modified) {
                 Object2IntMap<StatKey> parsed = parseStats(entry.getValue());
@@ -192,17 +196,21 @@ public final class StatScanner {
         for (Map.Entry<UUID, Path> entry : listPlayerFiles(advancementsDir).entrySet()) {
             UUID uuid = entry.getKey();
             known.add(uuid);
-            if (online.contains(uuid)) {
+            CachedCount cached = advancementCache.get(uuid);
+            if (online.contains(uuid) && cached != null) {
+                advancementCounts.put(uuid, cached.count);
                 continue;
             }
-            CachedCount cached = advancementCache.get(uuid);
             long modified = lastModified(entry.getValue());
-            if (cached == null || cached.modified != modified || cached.countableSize != countable.size()) {
+            // Keyed on the countable set's contents, not its size: a datapack
+            // reload that swaps one advancement for another leaves the size
+            // identical, and an offline player's mtime never changes again.
+            if (cached == null || cached.modified != modified || cached.countableHash != countable.hashCode()) {
                 int count = countAdvancements(entry.getValue(), countable);
                 if (count < 0) {
                     continue;
                 }
-                cached = new CachedCount(modified, countable.size(), count);
+                cached = new CachedCount(modified, countable.hashCode(), count);
                 advancementCache.put(uuid, cached);
             }
             advancementCounts.put(uuid, cached.count);
@@ -316,6 +324,6 @@ public final class StatScanner {
     private record CachedStats(long modified, Object2IntMap<StatKey> values) {
     }
 
-    private record CachedCount(long modified, int countableSize, int count) {
+    private record CachedCount(long modified, int countableHash, int count) {
     }
 }

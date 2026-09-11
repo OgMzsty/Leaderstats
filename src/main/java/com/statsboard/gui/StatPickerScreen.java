@@ -6,6 +6,7 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
@@ -74,7 +75,7 @@ public class StatPickerScreen extends Screen {
     private int closeX, closeY, closeWidth, closeHeight;
 
     public StatPickerScreen(Screen parent, Consumer<StatKey> onPicked) {
-        super(Text.literal("Pick a Stat"));
+        super(Text.translatable("statsboard.picker.title"));
         this.parent = parent;
         this.onPicked = onPicked;
     }
@@ -88,8 +89,8 @@ public class StatPickerScreen extends Screen {
         panelBottom = this.height - PANEL_BOTTOM_MARGIN;
 
         searchBox = new TextFieldWidget(this.textRenderer, panelX + 6, SEARCH_Y, panelWidth - 12, SEARCH_HEIGHT,
-                Text.literal("Search"));
-        searchBox.setPlaceholder(Text.literal("Search stats..."));
+                Text.translatable("statsboard.picker.search"));
+        searchBox.setPlaceholder(Text.translatable("statsboard.picker.search"));
         searchBox.setChangedListener(text -> refreshFilter());
         this.addSelectableChild(searchBox);
         this.setInitialFocus(searchBox);
@@ -163,7 +164,9 @@ public class StatPickerScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         this.renderBackground(context);
 
-        context.drawCenteredTextWithShadow(this.textRenderer, "§l§6Pick a Stat", this.width / 2, 10, 0xFFFFFF);
+        context.drawCenteredTextWithShadow(this.textRenderer,
+                Text.translatable("statsboard.picker.title").formatted(Formatting.BOLD, Formatting.GOLD),
+                this.width / 2, 10, 0xFFFFFF);
 
         int centerX = this.width / 2;
         int tabsStartX = centerX - (TAB_WIDTH * 3 + 8) / 2;
@@ -171,17 +174,17 @@ public class StatPickerScreen extends Screen {
         int itemsX = tabsStartX + TAB_WIDTH + 4;
         int mobsX = tabsStartX + (TAB_WIDTH + 4) * 2;
 
-        drawStyledButton(context, generalX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, "General",
+        drawStyledButton(context, generalX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, Text.translatable("statsboard.picker.general"),
                 currentCategory == Category.GENERAL, isInside(mouseX, mouseY, generalX, TABS_Y, TAB_WIDTH, TAB_HEIGHT));
-        drawStyledButton(context, itemsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, "Items",
+        drawStyledButton(context, itemsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, Text.translatable("statsboard.picker.items"),
                 currentCategory == Category.ITEMS, isInside(mouseX, mouseY, itemsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT));
-        drawStyledButton(context, mobsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, "Mobs",
+        drawStyledButton(context, mobsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, Text.translatable("statsboard.picker.mobs"),
                 currentCategory == Category.MOBS, isInside(mouseX, mouseY, mobsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT));
 
         drawStyledPanel(context, panelX, PANEL_TOP, panelWidth, panelBottom - PANEL_TOP, 1f);
         renderList(context, panelX, PANEL_TOP, panelWidth, panelBottom - PANEL_TOP);
 
-        drawStyledButton(context, closeX, closeY, closeWidth, closeHeight, "Cancel",
+        drawStyledButton(context, closeX, closeY, closeWidth, closeHeight, Text.translatable("gui.cancel"),
                 false, isInside(mouseX, mouseY, closeX, closeY, closeWidth, closeHeight));
 
         searchBox.render(context, mouseX, mouseY, delta);
@@ -193,7 +196,7 @@ public class StatPickerScreen extends Screen {
     }
 
     /** Same bordered-gradient look as LeaderboardScreen's buttons, so the two screens match. */
-    private void drawStyledButton(DrawContext context, int x, int y, int w, int h, String label,
+    private void drawStyledButton(DrawContext context, int x, int y, int w, int h, Text label,
                                    boolean active, boolean hovered) {
         context.fill(x - 2, y - 2, x + w + 2, y + h + 2, 0xFF1A1A22);
 
@@ -229,7 +232,8 @@ public class StatPickerScreen extends Screen {
         int contentBottom = y + height - 4;
 
         if (filteredRows.isEmpty()) {
-            context.drawTextWithShadow(this.textRenderer, "No matches.", x + 8, contentTop + 4, 0xFFAAAAAA);
+            context.drawTextWithShadow(this.textRenderer, Text.translatable("statsboard.picker.no_matches"),
+                    x + 8, contentTop + 4, 0xFFAAAAAA);
             return;
         }
 

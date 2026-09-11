@@ -75,6 +75,23 @@ public class LeaderboardBlockEntity extends BlockEntity {
         markDirty();
     }
 
+    /** Grows with a copy of the last column's stat, shrinks from the right. */
+    public void setColumnCount(int count) {
+        int clamped = Math.max(1, Math.min(count, MAX_COLUMNS));
+        if (clamped == columns.size()) {
+            return;
+        }
+        while (columns.size() > clamped) {
+            columns.remove(columns.size() - 1);
+        }
+        while (columns.size() < clamped) {
+            columns.add(columns.get(columns.size() - 1));
+        }
+        resizeCache();
+        ticksUntilRefresh = 0;
+        markDirty();
+    }
+
     private void refresh(MinecraftServer server) {
         if (server == null) {
             return;

@@ -1,6 +1,7 @@
 package com.statsboard.gui;
 
 import com.statsboard.network.StatsboardNetworking;
+import com.statsboard.block.LeaderboardBlockEntity;
 import com.statsboard.stat.StatKey;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
@@ -26,12 +27,15 @@ public class LeaderboardConfigScreen extends Screen {
     private static final int ROW_WIDTH = 220;
     private static final int ROW_HEIGHT = 22;
     private static final int ROW_GAP = 6;
+    private static final int SMALL_SIZE = 20;
+    private static final int MAX_ROWS = 3;
 
     private final BlockPos pos;
     private final List<StatKey> columns;
 
     private int rowX;
     private int firstRowY;
+    private int minusX, plusX, countY;
 
     public LeaderboardConfigScreen(BlockPos pos, List<StatKey> columns) {
         super(Text.translatable("statsboard.config.title"));
@@ -43,6 +47,9 @@ public class LeaderboardConfigScreen extends Screen {
     protected void init() {
         rowX = (this.width - ROW_WIDTH) / 2;
         firstRowY = this.height / 2 - (columns.size() * (ROW_HEIGHT + ROW_GAP)) / 2;
+        countY = firstRowY + MAX_ROWS * (ROW_HEIGHT + ROW_GAP) + 8;
+        minusX = this.width / 2 - 60;
+        plusX = this.width / 2 + 40;
     }
 
     @Override
@@ -63,12 +70,30 @@ public class LeaderboardConfigScreen extends Screen {
                     hovered);
         }
 
+        // Column count controls, so the 1- and 3-column layouts are reachable.
+        drawSmallButton(context, minusX, countY, "-", columns.size() > 1,
+                isInsideSmall(mouseX, mouseY, minusX, countY));
+        context.drawCenteredTextWithShadow(this.textRenderer,
+                Text.translatable("statsboard.config.count", columns.size()),
+                this.width / 2, countY + 6, 0xFFE8E0F0);
+        drawSmallButton(context, plusX, countY, "+", columns.size() < LeaderboardBlockEntity.MAX_COLUMNS,
+                isInsideSmall(mouseX, mouseY, plusX, countY));
+
         super.render(context, mouseX, mouseY, delta);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
+            if (isInsideSmall((int) mouseX, (int) mouseY, minusX, countY) && columns.size() > 1) {
+                applyCount(columns.size() - 1);
+                return true;
+            }
+            if (isInsideSmall((int) mouseX, (int) mouseY, plusX, countY)
+                    && columns.size() < LeaderboardBlockEntity.MAX_COLUMNS) {
+                applyCount(columns.size() + 1);
+                return true;
+            }
             for (int i = 0; i < columns.size(); i++) {
                 int y = firstRowY + i * (ROW_HEIGHT + ROW_GAP);
                 if (isInside((int) mouseX, (int) mouseY, rowX, y)) {
@@ -92,6 +117,36 @@ public class LeaderboardConfigScreen extends Screen {
         // Reflect the change locally so returning here shows the new stat; the
         // server's own block update follows on the next refresh.
         columns.set(columnIndex, key);
+    }
+
+    private void applyCount(int count) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeBlockPos(pos);
+        buf.writeInt(count);
+        ClientPlayNetworking.send(StatsboardNetworking.SET_COLUMN_COUNT, buf);
+
+        // Mirror the server's own grow/shrink rule so the list redraws correctly
+        // without waiting for the block update to come back.
+        while (columns.size() > count) {
+            columns.remove(columns.size() - 1);
+        }
+        while (columns.size() < count) {
+            columns.add(columns.get(columns.size() - 1));
+        }
+        init();
+    }
+
+    private void drawSmallButton(DrawContext context, int x, int y, String label, boolean enabled, boolean hovered) {
+        context.fill(x - 2, y - 2, x + SMALL_SIZE + 2, y + SMALL_SIZE + 2, 0xFF000000 | PANEL_BORDER);
+        context.fillGradient(x, y, x + SMALL_SIZE, y + SMALL_SIZE,
+                0xFF000000 | (hovered && enabled ? 0x362A50 : PANEL_TOP_COLOR),
+                0xFF000000 | (hovered && enabled ? 0x221A34 : PANEL_BOTTOM_COLOR));
+        context.drawCenteredTextWithShadow(this.textRenderer, label,
+                x + SMALL_SIZE / 2, y + SMALL_SIZE / 2 - 4, enabled ? 0xFFE8E0F0 : 0xFF666666);
+    }
+
+    private boolean isInsideSmall(int mouseX, int mouseY, int x, int y) {
+        return mouseX >= x && mouseX < x + SMALL_SIZE && mouseY >= y && mouseY < y + SMALL_SIZE;
     }
 
     private boolean isInside(int mouseX, int mouseY, int x, int y) {

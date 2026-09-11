@@ -285,7 +285,10 @@ Both are rebuilt together and published as immutables, once at
 `SERVER_STARTED` and again on `ServerLifecycleEvents.END_DATA_PACK_RELOAD`
 (signature `(MinecraftServer, LifecycledResourceManager, boolean success)` in
 fabric-lifecycle-events-v1, which ships in this project's fabric-api 0.92.2).
-The identifier set is handed to each scan job.
+The identifier set is handed to each scan job. The per-player advancement cache
+keys on that set's **content hash**, not its size: a datapack reload that swaps
+one advancement for another leaves the size identical, and an offline player's
+mtime never changes again.
 
 Lifecycle: started on `SERVER_STARTED`, shut down on `SERVER_STOPPING` with a
 bounded `awaitTermination` so a hung scan cannot hold the server open.
@@ -371,6 +374,10 @@ stat tracking.
 
 ### Hologram block
 
+The config screen carries **+ / - controls for the column count**, so the 1- and
+3-column layouts are actually reachable; without them nothing could ever produce
+a list other than the 2 defaults and `MAX_COLUMNS` would be dead.
+
 `LeaderboardBlockEntity` gains `List<StatKey> columns`, sized 1 to 3,
 defaulting to `[StatKey.DEATHS, StatKey.ADVANCEMENTS]` — so a freshly placed
 block looks exactly as it does today. Its per-column cached top entry (name,
@@ -424,8 +431,14 @@ interception so it opens the picker rather than placing a second block.
 
 The proximity rule, stated precisely to avoid a placement trap:
 
-- the radius is **3 blocks**, measured from the **would-be placement position**
-  (not from the player), searching the nearest `LeaderboardBlockEntity`
+- from `useOnBlock`, the radius is **3 blocks**, measured from the **would-be
+  placement position** (not from the player)
+- from `use` there is no placement position, so it is **5 blocks from the
+  player's eye** - the player aiming at a hologram is standing back from the
+  block itself
+- the scan pre-filters on `getBlockState(...).isOf(LEADERBOARD_BLOCK)` before
+  `getBlockEntity`, which goes through a full chunk fetch and would otherwise run
+  up to 1331 times on every air right-click
 - **sneak-right-click always places**, never opens the picker
 
 Without that sneak escape hatch the rule would be a trap: a three-column board
@@ -509,6 +522,7 @@ The single existing S2C channel is **replaced**, not extended:
 | C2S | `statsboard:request_board` | `StatKey`, `int limit` |
 | S2C | `statsboard:board_data` | `StatKey`, `boolean openScreen`, `List<LeaderboardEntry>` |
 | C2S | `statsboard:set_block_stat` | `BlockPos`, `int columnIndex`, `StatKey` |
+| C2S | `statsboard:set_column_count` | `BlockPos`, `int count` (clamped to 1-3) |
 | S2C | `statsboard:open_picker` | `BlockPos`, `List<StatKey>` |
 
 `openScreen` disambiguates the two ways `board_data` arrives: true for the
@@ -521,7 +535,16 @@ twice in quick succession could otherwise have the first reply land after the
 second.
 
 `request_board` clamps `limit` server-side to `[1, 50]` rather than trusting the
-client, and validates the `StatKey` with `isValid()`. `LeaderboardEntry` is
+client, and validates the `StatKey` with `isValid()`. It is also **rate limited
+per player** (250ms): a board query is a full sort over every player who has
+ever played, the per-tick memo only collapses *identical* keys, and a modified
+client could otherwise pin the server thread by walking the ~7700 stats the
+picker enumerates.
+
+Every server-side receiver reads its buffer through `StatKey.tryRead` and a
+try/catch. Buffer reads happen on the netty thread, where `readIdentifier` throws
+on a malformed string and a truncated buffer throws on read - and Fabric turns
+either into a disconnect for the sending client. `LeaderboardEntry` is
 unchanged — the client formats the raw int through `StatValueFormatter` using
 the `StatKey` it received alongside the entries.
 
@@ -597,5 +620,6 @@ What the playtest must confirm:
 - Backfilling or migrating the old `deaths` / `advancements` counters.
 - Per-block podium depth (top 3 per column); each column shows its top player,
   as today.
+- Localisations other than en_us.
 - Evicting long-inactive players from the snapshot.
 - Any stat source other than vanilla's.

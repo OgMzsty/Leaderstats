@@ -3,7 +3,6 @@ package com.statsboard.block;
 import com.statsboard.network.StatsboardNetworking;
 import com.statsboard.network.StatsboardServerNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
@@ -46,6 +45,9 @@ public final class LeaderboardInteraction {
         if (last != null && now - last < HINT_COOLDOWN_MS) {
             return;
         }
+        // Pruned on write rather than tracked per-connection: only vanilla
+        // clients ever reach this, so the map stays tiny either way.
+        LAST_HINT.values().removeIf(stamp -> now - stamp > HINT_COOLDOWN_MS);
         LAST_HINT.put(player.getUuid(), now);
         player.sendMessage(Text.translatable("statsboard.hint.client_required"), true);
     }
@@ -67,8 +69,12 @@ public final class LeaderboardInteraction {
             if (distance > radius * radius || distance >= nearestDistance) {
                 continue;
             }
-            BlockEntity blockEntity = world.getBlockEntity(pos);
-            if (blockEntity instanceof LeaderboardBlockEntity) {
+            // getBlockState first: getBlockEntity goes through a full chunk
+            // fetch, and this runs on every air right-click with the wand.
+            if (!world.getBlockState(pos).isOf(ModBlocks.LEADERBOARD_BLOCK)) {
+                continue;
+            }
+            if (world.getBlockEntity(pos) instanceof LeaderboardBlockEntity) {
                 nearest = pos.toImmutable();
                 nearestDistance = distance;
             }

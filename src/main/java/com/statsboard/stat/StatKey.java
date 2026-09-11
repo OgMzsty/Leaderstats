@@ -103,7 +103,10 @@ public record StatKey(Identifier typeId, Identifier valueId) {
         } else if (value instanceof Item item) {
             name = item.getName();
         } else if (value instanceof EntityType<?> entityType) {
-            name = entityType.getName();
+            // Not getName(): that lazily caches a MutableText in a non-volatile
+            // field, which the render thread and the integrated server thread
+            // would race on. The translation key gives the same text.
+            name = Text.translatable(entityType.getTranslationKey());
         } else {
             name = Text.literal(valueId.toString());
         }
@@ -118,6 +121,20 @@ public record StatKey(Identifier typeId, Identifier valueId) {
 
     public static StatKey read(PacketByteBuf buf) {
         return new StatKey(buf.readIdentifier(), buf.readIdentifier());
+    }
+
+    /**
+     * Empty instead of throwing. readIdentifier throws on a malformed string and
+     * a truncated buffer throws on read, both of which happen on the netty thread
+     * where Fabric turns the exception into a disconnect - so server-side
+     * receivers must use this rather than {@link #read}.
+     */
+    public static Optional<StatKey> tryRead(PacketByteBuf buf) {
+        try {
+            return Optional.of(read(buf));
+        } catch (RuntimeException e) {
+            return Optional.empty();
+        }
     }
 
     public NbtCompound toNbt() {
