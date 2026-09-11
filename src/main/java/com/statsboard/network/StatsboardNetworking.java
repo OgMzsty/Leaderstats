@@ -1,6 +1,7 @@
 package com.statsboard.network;
 
 import com.statsboard.LeaderboardEntry;
+import com.statsboard.ProfileEntry;
 import com.statsboard.stat.StatKey;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
@@ -21,6 +22,12 @@ public class StatsboardNetworking {
 
     /** C2S: grow or shrink a leaderboard block's column count. */
     public static final Identifier SET_COLUMN_COUNT = new Identifier("statsboard", "set_column_count");
+
+    /** C2S: client asks for one player's full stat profile. */
+    public static final Identifier REQUEST_PROFILE = new Identifier("statsboard", "request_profile");
+
+    /** S2C: that player's profile. */
+    public static final Identifier PROFILE_DATA = new Identifier("statsboard", "profile_data");
 
     /** S2C: open the picker for a leaderboard block the player just poked. */
     public static final Identifier OPEN_PICKER = new Identifier("statsboard", "open_picker");
@@ -58,6 +65,23 @@ public class StatsboardNetworking {
                 }
             }
             list.add(new LeaderboardEntry(uuid, name, count, skinValue, skinSignature));
+        }
+        return list;
+    }
+
+    public static void writeProfile(PacketByteBuf buf, List<ProfileEntry> entries) {
+        buf.writeInt(entries.size());
+        for (ProfileEntry entry : entries) {
+            entry.key().write(buf);
+            buf.writeInt(entry.value());
+        }
+    }
+
+    public static List<ProfileEntry> readProfile(PacketByteBuf buf) {
+        int size = buf.readInt();
+        List<ProfileEntry> list = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            list.add(new ProfileEntry(StatKey.read(buf), buf.readInt()));
         }
         return list;
     }

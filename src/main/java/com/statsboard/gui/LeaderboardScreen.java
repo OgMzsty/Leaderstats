@@ -25,6 +25,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
 import net.minecraft.util.math.MathHelper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,6 +65,15 @@ public class LeaderboardScreen extends Screen {
     private StatKey pendingKey;
     private long lastRequestMs = Util.getMeasuringTimeMs();
     private double scrollOffset = 0;
+
+    /**
+     * Clickable regions recorded during the last render pass, so hit testing
+     * cannot drift out of step with the drawing arithmetic. Positions ignore the
+     * open animation's slide offset, so a click during the first ~320ms is a few
+     * pixels out; after that it is exact.
+     */
+    private final List<Hit> rowHits = new ArrayList<>();
+    private final List<Hit> podiumHits = new ArrayList<>();
 
     private int deathsTabX, advTabX, pickerX, tabsY, tabWidth, tabHeight;
     private int closeX, closeY, closeWidth, closeHeight;
@@ -176,6 +186,13 @@ public class LeaderboardScreen extends Screen {
         return entries;
     }
 
+    /** The reply opens the profile screen; see the PROFILE_DATA receiver. */
+    private void openProfile(UUID uuid) {
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeUuid(uuid);
+        ClientPlayNetworking.send(StatsboardNetworking.REQUEST_PROFILE, buf);
+    }
+
     /** 0 at the moment the screen opens, easing up to 1 over durationMs. */
     private float easedProgress(long durationMs) {
         float t = MathHelper.clamp((System.currentTimeMillis() - openTimeMs) / (float) durationMs, 0f, 1f);
@@ -196,6 +213,9 @@ public class LeaderboardScreen extends Screen {
         int rightWidth = this.width - rightX - 20;
 
         context.drawCenteredTextWithShadow(this.textRenderer, "\u00a7l\u00a76Statsboard", this.width / 2, 10, 0xFFFFFF);
+
+        rowHits.clear();
+        podiumHits.clear();
 
         context.getMatrices().push();
         context.getMatrices().translate(0, slideOffset, 0);
@@ -290,6 +310,8 @@ public class LeaderboardScreen extends Screen {
                     int stripeColor = rank == 1 ? 0x33D4AF37 : rank == 2 ? 0x33C0C0C0 : 0x33CD7F32;
                     context.fill(x + 4, rowY - 1, x + width - 4, rowY + ROW_HEIGHT - 3, stripeColor);
                 }
+                rowHits.add(new Hit(x + 4, rowY - 1, width - 8, ROW_HEIGHT, entry.uuid()));
+
                 int color = rank == 1 ? 0xFFFFD700 : rank == 2 ? 0xFFE0E0E0 : rank == 3 ? 0xFFCD7F32 : 0xFFFFFFFF;
                 String line = rank + ". " + entry.name() + "  -  "
                         + StatValueFormatter.format(statKey, entry.count());
@@ -332,6 +354,9 @@ public class LeaderboardScreen extends Screen {
 
             if (rankIndex < list.size()) {
                 LeaderboardEntry entry = list.get(rankIndex);
+                // The whole slot column, so the figure, its nameplate and the
+                // pedestal all open the profile.
+                podiumHits.add(new Hit(slotX, y, slotWidth, height, entry.uuid()));
                 int size = modelSize[slot];
                 int modelBottom = pedestalTop + 4;
                 int modelTop = modelBottom - size;
@@ -479,6 +504,20 @@ public class LeaderboardScreen extends Screen {
                 this.close();
                 return true;
             }
+            // Rows first: a podium slot spans the whole right panel, so testing
+            // it first would swallow clicks meant for anything drawn over it.
+            for (Hit hit : rowHits) {
+                if (hit.contains(mx, my)) {
+                    openProfile(hit.uuid());
+                    return true;
+                }
+            }
+            for (Hit hit : podiumHits) {
+                if (hit.contains(mx, my)) {
+                    openProfile(hit.uuid());
+                    return true;
+                }
+            }
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -493,5 +532,12 @@ public class LeaderboardScreen extends Screen {
     @Override
     public boolean shouldPause() {
         return false;
+    }
+
+    /** A rectangle recorded while drawing, paired with the player it belongs to. */
+    private record Hit(int x, int y, int width, int height, UUID uuid) {
+        boolean contains(int mouseX, int mouseY) {
+            return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        }
     }
 }

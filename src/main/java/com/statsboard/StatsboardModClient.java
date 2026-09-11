@@ -5,8 +5,10 @@ import com.statsboard.config.StatsboardConfig;
 import com.statsboard.block.ModBlockEntities;
 import com.statsboard.gui.LeaderboardConfigScreen;
 import com.statsboard.gui.LeaderboardScreen;
+import com.statsboard.gui.PlayerProfileScreen;
 import com.statsboard.network.StatsboardNetworking;
 import com.statsboard.stat.StatKey;
+import java.util.UUID;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -49,6 +51,36 @@ public class StatsboardModClient implements ClientModInitializer {
                             // Anything else means the player closed or navigated
                             // away since asking; the reply is simply dropped.
                             screen.acceptBoard(key, entries);
+                        }
+                    });
+                });
+
+        ClientPlayNetworking.registerGlobalReceiver(StatsboardNetworking.PROFILE_DATA,
+                (client, handler, buf, responseSender) -> {
+                    UUID uuid = buf.readUuid();
+                    String name = buf.readString();
+                    String skinValue = null;
+                    String skinSignature = null;
+                    if (buf.readBoolean()) {
+                        skinValue = buf.readString();
+                        if (buf.readBoolean()) {
+                            skinSignature = buf.readString();
+                        }
+                    }
+                    List<ProfileEntry> entries = StatsboardNetworking.readProfile(buf);
+
+                    final String finalName = name;
+                    final String finalSkinValue = skinValue;
+                    final String finalSkinSignature = skinSignature;
+                    client.execute(() -> {
+                        // A profile already open just takes the new data, so the
+                        // periodic refresh does not rebuild the screen under the
+                        // player and lose their scroll position.
+                        if (client.currentScreen instanceof PlayerProfileScreen profile) {
+                            profile.acceptProfile(uuid, entries);
+                        } else {
+                            client.setScreen(new PlayerProfileScreen(client.currentScreen, uuid,
+                                    finalName, finalSkinValue, finalSkinSignature, entries));
                         }
                     });
                 });

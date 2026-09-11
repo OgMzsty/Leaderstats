@@ -42,6 +42,11 @@ public final class StatSnapshot {
         return knownPlayers;
     }
 
+    /** Every stat this player has on disk; empty rather than null. */
+    public Object2IntMap<StatKey> valuesOf(UUID uuid) {
+        return values.getOrDefault(uuid, Object2IntMaps.emptyMap());
+    }
+
     public int valueOf(UUID uuid, StatKey key) {
         return values.getOrDefault(uuid, Object2IntMaps.emptyMap()).getInt(key);
     }

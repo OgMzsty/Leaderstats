@@ -1,6 +1,10 @@
 package com.statsboard.network;
 
 import com.statsboard.LeaderboardEntry;
+import com.statsboard.PlayerProfileCache;
+import com.statsboard.PlayerStats;
+import com.statsboard.ProfileEntry;
+import net.minecraft.server.MinecraftServer;
 import com.statsboard.block.LeaderboardBlockEntity;
 import com.statsboard.stat.StatKey;
 import com.statsboard.stat.StatQuery;
@@ -89,6 +93,21 @@ public final class StatsboardServerNetworking {
                     server.execute(() -> applyColumnCount(player, pos, count));
                 });
 
+        ServerPlayNetworking.registerGlobalReceiver(StatsboardNetworking.REQUEST_PROFILE,
+                (server, player, handler, buf, sender) -> {
+                    UUID target;
+                    try {
+                        target = buf.readUuid();
+                    } catch (RuntimeException e) {
+                        return;
+                    }
+                    server.execute(() -> {
+                        if (allowRequest(player)) {
+                            sendProfile(player, target);
+                        }
+                    });
+                });
+
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 LAST_REQUEST.remove(handler.getPlayer().getUuid()));
     }
@@ -113,6 +132,29 @@ public final class StatsboardServerNetworking {
         buf.writeBoolean(openScreen);
         StatsboardNetworking.writeEntries(buf, entries);
         ServerPlayNetworking.send(player, StatsboardNetworking.BOARD_DATA, buf);
+    }
+
+    public static void sendProfile(ServerPlayerEntity player, UUID target) {
+        MinecraftServer server = player.getServer();
+        if (server == null) {
+            return;
+        }
+        List<ProfileEntry> entries = StatQuery.profileOf(server, target);
+        PlayerStats skin = PlayerProfileCache.skinOf(target);
+
+        PacketByteBuf buf = PacketByteBufs.create();
+        buf.writeUuid(target);
+        buf.writeString(StatQuery.nameFor(server, target));
+        buf.writeBoolean(skin != null && skin.skinTextureValue != null);
+        if (skin != null && skin.skinTextureValue != null) {
+            buf.writeString(skin.skinTextureValue);
+            buf.writeBoolean(skin.skinTextureSignature != null);
+            if (skin.skinTextureSignature != null) {
+                buf.writeString(skin.skinTextureSignature);
+            }
+        }
+        StatsboardNetworking.writeProfile(buf, entries);
+        ServerPlayNetworking.send(player, StatsboardNetworking.PROFILE_DATA, buf);
     }
 
     public static void sendOpenPicker(ServerPlayerEntity player, BlockPos pos, List<StatKey> columns) {

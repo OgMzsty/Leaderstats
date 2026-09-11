@@ -2,12 +2,18 @@ package com.statsboard.stat;
 
 import com.mojang.authlib.GameProfile;
 import com.statsboard.LeaderboardEntry;
+import com.statsboard.ProfileEntry;
+import com.statsboard.mixin.StatHandlerAccessor;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import com.statsboard.PlayerProfileCache;
 import com.statsboard.PlayerStats;
 import net.minecraft.advancement.Advancement;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.registry.Registries;
 import net.minecraft.stat.Stat;
+import net.minecraft.stat.StatType;
+import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,6 +31,13 @@ public final class StatQuery {
     public static final int MAX_LIMIT = 50;
 
     /**
+     * A profile is one packet and the S2C payload cap is 1 MiB. Each entry is
+     * two identifiers plus an int, so this leaves an order of magnitude of room
+     * while still covering any realistic player.
+     */
+    public static final int MAX_PROFILE_ENTRIES = 2000;
+
+    /**
      * Sorted values per stat, memoised for the duration of one server tick.
      * A single query is O(players), but it is invoked once per column per
      * leaderboard block, so a handful of boards showing the same stat would
@@ -34,6 +47,72 @@ public final class StatQuery {
     private static final Map<StatKey, List<Ranked>> MEMO = new HashMap<>();
 
     private StatQuery() {
+    }
+
+    /**
+     * Every statistic one player has a nonzero value for. Server thread only.
+     *
+     * <p>Online players are read from their live handler rather than the
+     * snapshot: the scanner deliberately skips re-reading their save file, so
+     * the cached values date from before they logged in and a profile opened
+     * mid-session would be stale by the length of that session.
+     */
+    public static List<ProfileEntry> profileOf(MinecraftServer server, UUID uuid) {
+        StatScanner scanner = StatScanner.instance();
+        if (scanner == null) {
+            return List.of();
+        }
+
+        List<ProfileEntry> entries = new ArrayList<>();
+        ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+
+        if (player != null) {
+            Object2IntMap<Stat<?>> live = ((StatHandlerAccessor) player.getStatHandler()).getStatMap();
+            for (Object2IntMap.Entry<Stat<?>> entry : live.object2IntEntrySet()) {
+                if (entry.getIntValue() <= 0) {
+                    continue;
+                }
+                StatKey key = keyOf(entry.getKey());
+                if (key != null) {
+                    entries.add(new ProfileEntry(key, entry.getIntValue()));
+                }
+            }
+            entries.add(new ProfileEntry(StatKey.ADVANCEMENTS,
+                    countDone(player, scanner.countableAdvancements())));
+        } else {
+            StatSnapshot snapshot = scanner.snapshot();
+            for (Object2IntMap.Entry<StatKey> entry : snapshot.valuesOf(uuid).object2IntEntrySet()) {
+                if (entry.getIntValue() > 0) {
+                    entries.add(new ProfileEntry(entry.getKey(), entry.getIntValue()));
+                }
+            }
+            entries.add(new ProfileEntry(StatKey.ADVANCEMENTS, snapshot.advancementsOf(uuid)));
+        }
+
+        entries.removeIf(entry -> entry.value() <= 0);
+        entries.sort((a, b) -> Integer.compare(b.value(), a.value()));
+        return entries.size() > MAX_PROFILE_ENTRIES
+                ? List.copyOf(entries.subList(0, MAX_PROFILE_ENTRIES))
+                : List.copyOf(entries);
+    }
+
+    /**
+     * Turns a live Stat back into its identifier pair. Null when either side has
+     * no registered id, which a mod can cause by handing out a Stat for a value
+     * it never registered.
+     */
+    private static StatKey keyOf(Stat<?> stat) {
+        Identifier typeId = Registries.STAT_TYPE.getId(stat.getType());
+        if (typeId == null) {
+            return null;
+        }
+        Identifier valueId = valueIdOf(stat.getType(), stat.getValue());
+        return valueId == null ? null : new StatKey(typeId, valueId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> Identifier valueIdOf(StatType<T> type, Object value) {
+        return type.getRegistry().getId((T) value);
     }
 
     /** Called at the end of every server tick; nothing is cached across ticks. */
@@ -128,6 +207,10 @@ public final class StatQuery {
      * every player on every query would reorder the server's own usercache.json
      * around whoever happened to be on a leaderboard.
      */
+    public static String nameFor(MinecraftServer server, UUID uuid) {
+        return nameOf(server, uuid);
+    }
+
     private static String nameOf(MinecraftServer server, UUID uuid) {
         GameProfile profile = server.getUserCache() == null
                 ? null
