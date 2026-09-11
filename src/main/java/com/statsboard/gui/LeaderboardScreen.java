@@ -3,6 +3,7 @@ package com.statsboard.gui;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.statsboard.LeaderboardEntry;
+import com.statsboard.config.StatsboardConfig;
 import com.statsboard.network.StatsboardNetworking;
 import com.statsboard.stat.StatKey;
 import com.statsboard.stat.StatValueFormatter;
@@ -55,6 +56,7 @@ public class LeaderboardScreen extends Screen {
     private StatKey statKey;
     /** The stat we last asked the server for; replies for anything else are stale. */
     private StatKey pendingKey;
+    private long lastRequestMs = System.currentTimeMillis();
     private double scrollOffset = 0;
 
     private int deathsTabX, advTabX, pickerX, tabsY, tabWidth, tabHeight;
@@ -77,10 +79,44 @@ public class LeaderboardScreen extends Screen {
         if (!key.equals(pendingKey)) {
             return;
         }
+
+        // Only a genuine stat change resets the view. A periodic refresh of the
+        // same stat must leave the player's scroll position and cached models
+        // alone, or the board would yank itself back to the top every interval.
+        boolean statChanged = !key.equals(statKey);
+
         this.statKey = key;
         this.entries = incoming;
-        this.scrollOffset = 0;
-        this.entityCache.clear();
+        if (statChanged) {
+            this.scrollOffset = 0;
+            this.entityCache.clear();
+        } else {
+            clampScroll();
+        }
+    }
+
+    /** Keeps the offset in range when a refresh returns a shorter list. */
+    private void clampScroll() {
+        int visibleHeight = this.height - PANEL_BOTTOM_MARGIN - PANEL_TOP - 22;
+        int maxScroll = Math.max(0, entries.size() * ROW_HEIGHT - visibleHeight);
+        scrollOffset = MathHelper.clamp(scrollOffset, 0, maxScroll);
+    }
+
+    /**
+     * Re-asks for the stat on screen so a board left open keeps up with play.
+     * Interval comes from the client config; zero disables it.
+     */
+    @Override
+    public void tick() {
+        super.tick();
+
+        long interval = StatsboardConfig.get().refreshIntervalMs();
+        if (interval <= 0) {
+            return;
+        }
+        if (System.currentTimeMillis() - lastRequestMs >= interval) {
+            requestStat(statKey);
+        }
     }
 
     @Override
@@ -103,6 +139,7 @@ public class LeaderboardScreen extends Screen {
     /** Asks the server for a different stat; the reply arrives via acceptBoard. */
     private void requestStat(StatKey key) {
         this.pendingKey = key;
+        this.lastRequestMs = System.currentTimeMillis();
         PacketByteBuf buf = PacketByteBufs.create();
         key.write(buf);
         buf.writeInt(50);
