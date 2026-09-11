@@ -53,15 +53,23 @@ public class StatsboardConfig {
             fresh.save();
             return fresh;
         }
+        StatsboardConfig loaded;
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            StatsboardConfig loaded = GSON.fromJson(reader, StatsboardConfig.class);
-            return loaded == null ? new StatsboardConfig() : loaded;
+            loaded = GSON.fromJson(reader, StatsboardConfig.class);
         } catch (Exception e) {
             // A hand-edited file with a syntax error should not stop the GUI
             // from opening; fall back to defaults and say so once.
             LOGGER.warn("[statsboard] could not read {}, using defaults: {}", path, e.toString());
             return new StatsboardConfig();
         }
+
+        if (loaded == null) {
+            loaded = new StatsboardConfig();
+        }
+        // Written back, after the read handle is closed, so a file from an older
+        // version picks up fields added since rather than silently lacking them.
+        loaded.save();
+        return loaded;
     }
 
     public void save() {

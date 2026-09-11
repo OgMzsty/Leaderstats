@@ -22,11 +22,14 @@ import net.minecraft.entity.LivingEntity;
 import com.statsboard.mixin.PlayerEntityAccessor;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class LeaderboardScreen extends Screen {
@@ -40,6 +43,9 @@ public class LeaderboardScreen extends Screen {
     private static final int PANEL_TOP_COLOR = 0x2B2140;
     private static final int PANEL_BOTTOM_COLOR = 0x120C1E;
     private static final int GOLD_TRIM = 0xD4AF37;
+
+    /** How soon to re-ask when a stat switch has gone unanswered. */
+    private static final long SWITCH_RETRY_MS = 1000;
 
     private static final long OPEN_ANIM_MS = 320;
     private static final long FADE_ANIM_MS = 260;
@@ -56,7 +62,7 @@ public class LeaderboardScreen extends Screen {
     private StatKey statKey;
     /** The stat we last asked the server for; replies for anything else are stale. */
     private StatKey pendingKey;
-    private long lastRequestMs = System.currentTimeMillis();
+    private long lastRequestMs = Util.getMeasuringTimeMs();
     private double scrollOffset = 0;
 
     private int deathsTabX, advTabX, pickerX, tabsY, tabWidth, tabHeight;
@@ -91,15 +97,25 @@ public class LeaderboardScreen extends Screen {
             this.scrollOffset = 0;
             this.entityCache.clear();
         } else {
-            clampScroll();
+            // Drop models for anyone a refresh knocked off the board, or the
+            // cache would grow for as long as the screen stays open.
+            Set<UUID> live = new HashSet<>();
+            for (LeaderboardEntry entry : incoming) {
+                live.add(entry.uuid());
+            }
+            entityCache.keySet().retainAll(live);
+            scrollOffset = MathHelper.clamp(scrollOffset, 0, maxScroll());
         }
     }
 
-    /** Keeps the offset in range when a refresh returns a shorter list. */
-    private void clampScroll() {
-        int visibleHeight = this.height - PANEL_BOTTOM_MARGIN - PANEL_TOP - 22;
-        int maxScroll = Math.max(0, entries.size() * ROW_HEIGHT - visibleHeight);
-        scrollOffset = MathHelper.clamp(scrollOffset, 0, maxScroll);
+    /**
+     * Content area is the panel less the header strip and the bottom inset, so
+     * this has to match renderList's contentTop/contentBottom exactly or the
+     * last row cannot be scrolled fully into view.
+     */
+    private int maxScroll() {
+        int visibleHeight = this.height - PANEL_BOTTOM_MARGIN - PANEL_TOP - 26;
+        return Math.max(0, entries.size() * ROW_HEIGHT - visibleHeight);
     }
 
     /**
@@ -114,8 +130,18 @@ public class LeaderboardScreen extends Screen {
         if (interval <= 0) {
             return;
         }
-        if (System.currentTimeMillis() - lastRequestMs >= interval) {
-            requestStat(statKey);
+
+        // Re-ask for the stat we last *requested*, not the one on screen. The
+        // server drops any request inside its 250ms rate limit and answers
+        // nothing, so asking for the displayed stat here would overwrite the
+        // pending one and lose that switch for good. Retry sooner while a
+        // switch is outstanding, so a dropped one recovers in a second rather
+        // than a full interval.
+        boolean awaitingSwitch = !pendingKey.equals(statKey);
+        long wait = awaitingSwitch ? SWITCH_RETRY_MS : interval;
+
+        if (Util.getMeasuringTimeMs() - lastRequestMs >= wait) {
+            requestStat(pendingKey);
         }
     }
 
@@ -139,7 +165,7 @@ public class LeaderboardScreen extends Screen {
     /** Asks the server for a different stat; the reply arrives via acceptBoard. */
     private void requestStat(StatKey key) {
         this.pendingKey = key;
-        this.lastRequestMs = System.currentTimeMillis();
+        this.lastRequestMs = Util.getMeasuringTimeMs();
         PacketByteBuf buf = PacketByteBufs.create();
         key.write(buf);
         buf.writeInt(50);
@@ -460,9 +486,7 @@ public class LeaderboardScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
         scrollOffset -= amount * ROW_HEIGHT * 2;
-        int visibleHeight = this.height - PANEL_BOTTOM_MARGIN - PANEL_TOP - 22;
-        int maxScroll = Math.max(0, currentList().size() * ROW_HEIGHT - visibleHeight);
-        scrollOffset = MathHelper.clamp(scrollOffset, 0, maxScroll);
+        scrollOffset = MathHelper.clamp(scrollOffset, 0, maxScroll());
         return true;
     }
 

@@ -43,10 +43,13 @@ public final class StatValueFormatter {
     }
 
     public static String format(StatKey key, int value) {
-        if (!"minecraft".equals(key.typeId().getNamespace()) || !"custom".equals(key.typeId().getPath())) {
+        if (!"minecraft".equals(key.typeId().getNamespace()) || !"custom".equals(key.typeId().getPath())
+                || !"minecraft".equals(key.valueId().getNamespace())) {
             return count(value);
         }
 
+        // Namespace checked above, so a modded somemod:play_time is a plain
+        // count rather than being read as a duration.
         String path = key.valueId().getPath();
         if (path.endsWith("_one_cm")) {
             return distance(value);

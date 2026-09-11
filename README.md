@@ -153,8 +153,10 @@ For a multiplayer test there is a dedicated server and two named clients:
 ./gradlew runClientBravo
 ```
 
-Each gets its own directory under `run/`. The server needs `online-mode=false` in
-`run/server/server.properties` to let the offline accounts in.
+Each gets its own directory under `run/`. The server one moved there from plain `run/`, so
+an existing dev world and accepted EULA will not be picked up until you move them across.
+It also needs `online-mode=false` in `run/server/server.properties` to let the offline
+accounts in.
 
 | | |
 | --- | --- |
