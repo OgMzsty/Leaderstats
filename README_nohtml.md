@@ -68,8 +68,29 @@ Zero turns refreshing off and freezes the board at whatever it showed when you o
 refresh leaves your scroll position alone, so a long list will not yank itself back to the top
 while you are reading it.
 
+Clicking any name on the board opens that player's profile. See below.
+
 There is an **Open Leaderboard** keybind in Options, Controls too. It is unbound out of the
 box so it cannot steal a key you already use. Bind it and it runs the same command.
+
+## Profiles
+
+Click a name in the ranking, or one of the figures on the podium, and you get that
+player on their own: every statistic they have a number for, and a full-height model
+of them stood next to it.
+
+Same three tabs as the picker, General, Items and Mobs, with a search box over them.
+Rows run highest first, which does mean General always opens on the distance stats,
+since a walk measured in centimetres will beat a death count every time.
+
+It refreshes on the same interval as the board, and a refresh leaves your scroll
+position, your tab and whatever you had typed alone.
+
+Players who are offline work too. Their numbers come off the save file rather than
+the session, so the profile is as complete as it is for anyone stood next to you.
+
+Very long profiles are cut at the top 2000 entries. Nothing on a normal world gets
+near that, and the list is sorted before it is cut, so what you lose is the tail.
 
 ## The board itself
 
@@ -169,6 +190,7 @@ accounts in.
 | How far apart the columns stand | `COLUMN_SPACING`, `LeaderboardBlockEntityRenderer.java` |
 | Most columns on one board | `MAX_COLUMNS`, `LeaderboardBlockEntity.java` |
 | Longest board anyone can ask for | `MAX_LIMIT`, `StatQuery.java` |
+| Most stats one profile carries | `MAX_PROFILE_ENTRIES`, `StatQuery.java` |
 | How near the wand looks for a board to edit | `WAND_EDIT_RADIUS`, `WAND_REACH_RADIUS`, `LeaderboardInteraction.java` |
 | GUI colours, layout, row height | `LeaderboardScreen.java` |
 
