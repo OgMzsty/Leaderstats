@@ -45,6 +45,9 @@ public class LeaderboardScreen extends Screen {
     private static final int PANEL_BOTTOM_COLOR = 0x120C1E;
     private static final int GOLD_TRIM = 0xD4AF37;
 
+    /** A player model is ~1.8 blocks tall, and drawEntity scales by block. */
+    private static final float PLAYER_BLOCKS_TALL = 1.8f;
+
     /** How soon to re-ask when a stat switch has gone unanswered. */
     private static final long SWITCH_RETRY_MS = 1000;
 
@@ -153,6 +156,20 @@ public class LeaderboardScreen extends Screen {
         if (Util.getMeasuringTimeMs() - lastRequestMs >= wait) {
             requestStat(pendingKey);
         }
+
+        ProfileRequests.retryIfStale();
+    }
+
+    /**
+     * Releases any outstanding profile request. Without this a request that
+     * never gets a reply - the server drops one inside its rate limit - would
+     * leave a static field holding this screen, and through its entity cache a
+     * whole ClientWorld, for the rest of the session.
+     */
+    @Override
+    public void removed() {
+        super.removed();
+        ProfileRequests.clear();
     }
 
     @Override
@@ -362,7 +379,10 @@ public class LeaderboardScreen extends Screen {
                 // The figure and its pedestal only. Spanning the whole slot
                 // column would make any click in the panel's empty upper half
                 // fire a network request.
-                int hitTop = pedestalTop - modelSize[slot] - 8;
+                // drawEntity's size is a scale factor, so the drawn figure is
+                // about 1.8x it; using size directly left the winner's head
+                // sticking out above its own click target.
+                int hitTop = pedestalTop + 4 - (int) (modelSize[slot] * PLAYER_BLOCKS_TALL) - 8;
                 podiumHits.add(new Hit(slotX + 4, Math.max(hitTop, y),
                         slotWidth - 8, baseY - Math.max(hitTop, y) + 10, entry.uuid()));
                 int size = modelSize[slot];
@@ -375,9 +395,10 @@ public class LeaderboardScreen extends Screen {
                     if (entity != null) {
                         try {
                             int centerY = (modelTop + modelBottom) / 2;
-                            float rotX = (float) Math.atan((centerX - mouseX) / 40.0);
-                            float rotY = (float) Math.atan((centerY - mouseY) / 40.0);
-                            InventoryScreen.drawEntity(context, centerX, modelBottom, size, rotX, rotY, entity);
+                            // Raw offsets: drawEntity applies its own atan(v / 40),
+                            // so pre-atan'ing them flattened the head turn to nothing.
+                            InventoryScreen.drawEntity(context, centerX, modelBottom, size,
+                                    (float) (centerX - mouseX), (float) (centerY - mouseY), entity);
                             drewModel = true;
                         } catch (Throwable t) {
                             use3DModel = false;

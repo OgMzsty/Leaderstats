@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.network.PacketByteBuf;
+import net.minecraft.util.Util;
 
 import java.util.UUID;
 
@@ -21,8 +22,12 @@ import java.util.UUID;
  * <p>Client only, single threaded - everything here runs on the render thread.
  */
 public final class ProfileRequests {
+    /** Re-send an unanswered open after this long; the server drops requests inside its own window. */
+    private static final long RETRY_MS = 300;
+
     private static UUID pendingUuid;
     private static Screen requester;
+    private static long sentAtMs;
 
     private ProfileRequests() {
     }
@@ -31,7 +36,20 @@ public final class ProfileRequests {
     public static void requestOpen(Screen from, UUID uuid) {
         pendingUuid = uuid;
         requester = from;
+        sentAtMs = Util.getMeasuringTimeMs();
         send(uuid);
+    }
+
+    /**
+     * Re-sends an open that has gone unanswered. Two clicks inside the server's
+     * 250ms window would otherwise leave the second silently dropped and the
+     * first discarded as stale, so nothing opens at all.
+     */
+    public static void retryIfStale() {
+        if (pendingUuid != null && Util.getMeasuringTimeMs() - sentAtMs >= RETRY_MS) {
+            sentAtMs = Util.getMeasuringTimeMs();
+            send(pendingUuid);
+        }
     }
 
     /** Asks for fresh data for an already-open profile; never opens a screen. */

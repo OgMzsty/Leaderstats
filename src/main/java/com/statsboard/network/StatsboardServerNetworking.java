@@ -38,9 +38,9 @@ public final class StatsboardServerNetworking {
     /**
      * Separate buckets per request kind. Sharing one would let the leaderboard's
      * periodic refresh swallow a profile click that happened to land within the
-     * window, and a dropped click is a dead no-op with no retry. A profile is
-     * O(one player's stats) rather than a full sort, so it does not need to be
-     * throttled against board queries anyway.
+     * window. A profile still costs a copy of the target's stat map, a registry
+     * lookup per entry and a sort, so it keeps a window of its own - it just
+     * does not need to queue behind board queries.
      */
     private static final Map<UUID, Long> LAST_BOARD_REQUEST = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> LAST_PROFILE_REQUEST = new ConcurrentHashMap<>();
