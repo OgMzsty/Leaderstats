@@ -143,20 +143,28 @@ The single identity for "which stat is this leaderboard about".
   For `ADVANCEMENTS`, a mod lang key. Otherwise
   `Text.translatable(statType.getTranslationKey())` followed by the value's own
   name, dispatched explicitly because `StatType<T>` exposes no generic name
-  accessor:
+  accessor. Note this is Java 17 — `build.gradle` pins `options.release = 17`,
+  so pattern-matching `switch` and `case null` (Java 21) are unavailable;
+  `instanceof` patterns are fine:
 
   ```java
   Object v = type.getRegistry().getOrEmpty(valueId).orElse(null);
-  Text name = switch (v) {
-      case Block b       -> b.getName();
-      case Item i        -> i.getName();
-      case EntityType<?> e -> e.getName();
-      case null, default -> Text.literal(valueId.toString());
-  };
+  Text name;
+  if (v instanceof Block b) name = b.getName();
+  else if (v instanceof Item i) name = i.getName();
+  else if (v instanceof EntityType<?> e) name = e.getName();
+  else name = Text.literal(valueId.toString());
   ```
 
-- NBT codec `writeNbt` / `fromNbt`; packet codec `write` / `read` (two
-  identifiers).
+  Deliberately does **not** use `StatType.getName()`, which lazily writes a
+  non-volatile `Text name` field and so is not safe to call from the client.
+
+- Wire codec: `buf.writeIdentifier(typeId)` then `buf.writeIdentifier(valueId)`;
+  read in the same order.
+- NBT codec: a compound with string keys `"Type"` and `"Value"`. `fromNbt`
+  returns `Optional<StatKey>`, empty if either key is absent or is not a
+  well-formed identifier (`Identifier.tryParse` returns null), so a
+  hand-edited or corrupted block never throws during chunk load.
 
 Constants: `StatKey.DEATHS` (`minecraft:custom` / `minecraft:deaths`) and
 `StatKey.ADVANCEMENTS` (`statsboard:special` / `statsboard:advancements`).
@@ -175,17 +183,37 @@ goes through a shared `DecimalFormat`.
 public static String format(StatKey key, int value)
 ```
 
-Classifies by stat id rather than by reading vanilla's private formatter field,
-which is safe because the mapping is a fixed table in `Stats`:
+Classifies by stat id rather than by reading vanilla's private formatter field.
+This is safe because the mapping is a fixed table in `Stats`'s static
+initializer, which was disassembled to confirm the rules below are exact — no
+false positives and no missed entries:
 
-- custom stat id ending `_one_cm` → distance (m / km, one decimal place)
+- custom stat id ending `_one_cm` → **distance**. 15 such stats, and no
+  `_one_cm` stat uses any other formatter.
 - `play_time`, `total_world_time`, `time_since_death`, `time_since_rest`,
-  `sneak_time` → duration in ticks (`h m s`)
-- custom stat id starting `damage_` → value / 10, one decimal place
-- everything else, and every non-custom stat type → plain grouped integer
+  `sneak_time` → **time**. Exactly these five.
+- custom stat id starting `damage_` → **divide by ten**. 7 such stats, and no
+  other id starts with `damage_`.
+- everything else, and every non-custom stat type → **plain count**. This
+  includes `minecraft:jump` and `minecraft:drop`, which are ordinary counts.
 
-Uses a `ThreadLocal<NumberFormat>` so no formatter instance is ever shared
-across threads.
+**Output must match vanilla exactly**, so a value reads the same here as on the
+player's own Statistics screen. Vanilla's shapes, from
+`StatFormatter`'s bytecode:
+
+- shared decimal format is `new DecimalFormat("########0.00")` — always two
+  decimal places
+- **distance** (input cm): `>= 1000 m` → `"<km> km"`; `>= 0.5 m` → `"<m> m"`;
+  otherwise the raw centimetres as an integer plus `" cm"`
+- **time** (input ticks): a **single largest unit**, not a composite. Convert
+  ticks → s → m → h → d → y, and emit the largest unit whose value exceeds
+  0.5, formatted to two decimals: `"12.34 h"`, `"1.50 d"`. Below 0.5 minutes,
+  emit whole seconds plus `" s"`.
+- **divide by ten**: `value * 0.1` through the same two-decimal format
+- **plain count**: grouped integer, `NumberFormat.getIntegerInstance(Locale.US)`
+
+Every formatter instance is held in a `ThreadLocal`, so none is ever shared
+across threads — which is the whole reason this class exists.
 
 ### `com.statsboard.stat.StatSnapshot`
 
@@ -196,7 +224,7 @@ before the first scan finishes).
 ```java
 Map<UUID, Object2IntMap<StatKey>> values;  // from world/stats/*.json
 Map<UUID, Integer> advancementCounts;      // from world/advancements/*.json
-Map<UUID, String> names;                   // from usercache.json
+Set<UUID> knownPlayers;                    // union of both directories
 ```
 
 Note `values` holds **plain ints keyed by `StatKey`**, not `ServerStatHandler`
@@ -204,10 +232,16 @@ objects and not `Stat` objects. That is what keeps the scanner off the
 `StatType` maps, and it is also far smaller in memory — it is exactly the
 file's contents as primitives.
 
-Its key set is "every player who has ever played on this world", derived from
-the stats directory filenames. Nothing evicts, which is a deliberate
-trade-off: a 10k-player world holds 10k small int maps. Acceptable; revisit
-only if it is ever measured to be a problem.
+`knownPlayers` is the **union** of the two directories' filenames, not just the
+stats directory: an imported or hand-edited world can have an advancements file
+with no stats file, and such a player must still appear on the advancements
+board. Every read of `values` and `advancementCounts` goes through
+`getOrDefault` with an empty default, so a UUID present in one map and absent
+from the other yields zero rather than an NPE.
+
+Nothing evicts, which is a deliberate trade-off: a 10k-player world holds 10k
+small int maps. Acceptable; revisit only if it is ever measured to be a
+problem.
 
 ### `com.statsboard.stat.StatScanner`
 
@@ -235,24 +269,23 @@ top-level `"DataVersion"` integer, and count entries whose value is a
 `JsonObject` with `"done": true` and whose key is in the **countable id set**.
 
 That countable set is computed **on the server thread**, not the scanner
-thread — `ServerAdvancementLoader` swaps its internal manager during `/reload`
-with no synchronization, so reading it off-thread is a race:
+thread — `ServerAdvancementLoader` swaps its internal `manager` field during
+`/reload` with no synchronization, so reading it off-thread is a race.
+
+It is cached as a **pair**, because the two consumers need different forms: the
+scanner matches JSON keys and needs identifiers, while `StatQuery`'s online path
+calls `getProgress(Advancement)` and needs the objects:
 
 ```java
-Set<Identifier> countable = server.getAdvancementLoader().getAdvancements().stream()
-        .filter(a -> a.getDisplay() != null)
-        .map(Advancement::getId)
-        .collect(toUnmodifiableSet());
+List<Advancement> countableAdvancements;  // display != null, ~110 entries
+Set<Identifier> countableIds;             // their ids
 ```
 
-It is computed once at `SERVER_STARTED`, refreshed on
-`ServerLifecycleEvents.END_DATA_PACK_RELOAD`, and handed to each scan job as an
-immutable set. It is ~110 entries.
-
-Names: the scanner also reads `usercache.json` from the server root. This is
-deliberately the raw file rather than `server.getUserCache()`, because
-`UserCache` prunes entries older than 30 days from memory while the file
-retains them — and our key set spans the entire history of the world.
+Both are rebuilt together and published as immutables, once at
+`SERVER_STARTED` and again on `ServerLifecycleEvents.END_DATA_PACK_RELOAD`
+(signature `(MinecraftServer, LifecycledResourceManager, boolean success)` in
+fabric-lifecycle-events-v1, which ships in this project's fabric-api 0.92.2).
+The identifier set is handed to each scan job.
 
 Lifecycle: started on `SERVER_STARTED`, shut down on `SERVER_STOPPING` with a
 bounded `awaitTermination` so a hung scan cannot hold the server open.
@@ -271,29 +304,43 @@ live values** — vanilla flushes to disk only every few minutes, so a snapshot
 value for an online player is stale by construction:
 
 - real stat, online: `serverPlayer.getStatHandler().getStat(resolved)`
-- real stat, offline: `snapshot.values.get(uuid).getInt(key)`
-- advancements, online: count the **countable set only** (~110), via
+- real stat, offline: `snapshot.values.getOrDefault(uuid, empty).getInt(key)`
+- advancements, online: count `countableAdvancements` (~110) via
   `player.getAdvancementTracker().getProgress(adv).isDone()`
-- advancements, offline: `snapshot.advancementCounts.get(uuid)`
+- advancements, offline: `snapshot.advancementCounts.getOrDefault(uuid, 0)`
 
-The "countable set only" restriction on the online path matters beyond
+The "countable list only" restriction on the online path matters beyond
 performance: `PlayerAdvancementTracker.getProgress` is not a pure read — it
 inserts a fresh `AdvancementProgress` for any advancement not already present.
 Iterating all 1271 every 5 seconds per online player would permanently balloon
 every player's progress map. Iterating 110 keeps it bounded to advancements
-that are displayable anyway.
+that are displayable anyway. (Those inserted entries never reach disk: `save()`
+only serialises entries where `isAnyObtained()`.)
 
-Then: drop values <= 0, sort descending, truncate to `limit`.
+Then: drop values <= 0, sort descending, **truncate to `limit`, and only then
+resolve names and skins.** That ordering is load-bearing, not tidiness:
+`UserCache.getByUuid` mutates the entry's `lastAccessed` on every call, and
+vanilla's `UserCache.save()` persists only the 1000 most-recently-accessed
+entries. Resolving names for every historical player on every query would
+reorder the server's own usercache so that it keeps "whoever the leaderboard
+touched" instead of recent players — silently corrupting a vanilla data file.
+Truncating first bounds this to at most 50 lookups per query.
 
 Name resolution, in order: `server.getUserCache().getByUuid(uuid)` →
-`snapshot.names` (from `usercache.json`) → `PlayerProfileCache` → the first 8
-characters of the UUID. A player who last logged in long before the mod existed
-and has aged out of the usercache file will render as a UUID stub with a
-default skin. That is a real and visible limitation of "everyone who has ever
-played"; it is accepted rather than solved.
+`PlayerProfileCache` → the first 8 characters of the UUID. `getByUuid` does no
+expiry filtering and its in-memory map is a superset of `usercache.json`, so
+there is nothing to gain by reading that file directly. A player who last
+logged in long before the mod existed and has since fallen out of the cache
+renders as a UUID stub with a default skin — a real and visible limitation of
+"everyone who has ever played", accepted rather than solved.
 
-Cost is O(players) per call, called once per GUI open and once per block
-refresh interval (5s). No caching layer is warranted.
+**Per-cycle memoisation.** A single call is O(players), but it is invoked once
+per *column* per *block*, so five boards of three columns is fifteen full
+sorts every 5 seconds. `StatQuery` therefore memoises results by `StatKey` for
+the duration of one server tick, so boards showing the same stat — and the two
+columns of the default layout across every board on the server — cost one pass
+between them. The memo is cleared at the end of each tick; nothing is cached
+across ticks, so values stay as fresh as the refresh interval implies.
 
 ### `PlayerProfileCache` (was `StatsManager`)
 
@@ -332,15 +379,28 @@ value, uuid, skin value, skin signature) replaces the hardcoded `topDeath*` /
 than relying on `nbt.getString` defaulting to `""`, so a block renders sanely
 in the up-to-5s window before its first refresh.
 
-`readNbt` detects an old-version block via
+`Columns` is an NBT list of compounds, each the `StatKey` NBT form
+(`{"Type": "...", "Value": "..."}`). `readNbt` detects an old-version block via
 `nbt.contains("Columns", NbtElement.LIST_TYPE)` and falls back to the default
-pair.
+pair; an element that fails `StatKey.fromNbt` is dropped, and if that empties
+the list the default pair is used.
+
+**Refreshes are staggered.** `serverTick` currently starts every block at
+`ticksUntilRefresh = 0`, so after a chunk-load burst every board on the server
+refreshes on the same tick. Seed it instead from
+`Math.floorMod(pos.hashCode(), REFRESH_INTERVAL_TICKS)`.
 
 Note the sync cost: the block entity NBT is sent in full on every
 `markDirty()`, and each column carries a base64 skin value (~1KB) plus
-signature (~700B). Three columns is ~5KB per update per block. Refreshes are
-5s apart and only fire when a value actually changed, so this is acceptable,
-but it is the reason columns are capped at 3.
+signature (~700B). Three columns is ~5KB — and that is **per tracking player**,
+since `markDirty` routes through `world.updateListeners` to everyone tracking
+the chunk, and `toInitialChunkDataNbt` sends the same payload again to every
+player on chunk load. Refreshes are 5s apart and only fire when a value
+actually changed. This is the reason columns are capped at 3.
+
+Nothing in vanilla calls `markDirty` on this block entity — it has no
+inventory, no comparator output, and no `onStateReplaced` path — so the 5s
+refresh is the only trigger.
 
 **Opening the picker.** Right-clicking the block works, but is not sufficient
 on its own: the block's hitbox is a 4×1×4 nub at its base
@@ -349,11 +409,28 @@ stand metres away, so a player aiming at the hologram hits nothing. Two entry
 points:
 
 1. `LeaderboardBlock.onUse` on the nub itself.
-2. **Right-clicking with the Leaderboard Wand within 5 blocks of a leaderboard
-   block opens the picker for the nearest one** instead of placing a new one.
-   This is the discoverable path — you placed it with the wand, you edit it
-   with the wand — and it requires a matching change in
-   `LeaderboardStickItem.useOnBlock`.
+2. **Right-clicking with the Leaderboard Wand near an existing leaderboard
+   opens the picker for the nearest one** instead of placing a new one. This is
+   the discoverable path — you placed it with the wand, you edit it with the
+   wand.
+
+Entry point 2 must be implemented in **both** `LeaderboardStickItem.use` and
+`useOnBlock`, and `use` is the one that matters. Aiming at a hologram figure
+standing over open ground hits no block at all, so the raycast misses and the
+client sends `PlayerInteractItemC2SPacket`, which routes to `Item.use` — never
+to `useOnBlock`. Implementing only `useOnBlock` would leave the exact gesture
+this feature exists to support doing nothing. `useOnBlock` still needs the same
+interception so it opens the picker rather than placing a second block.
+
+The proximity rule, stated precisely to avoid a placement trap:
+
+- the radius is **3 blocks**, measured from the **would-be placement position**
+  (not from the player), searching the nearest `LeaderboardBlockEntity`
+- **sneak-right-click always places**, never opens the picker
+
+Without that sneak escape hatch the rule would be a trap: a three-column board
+spans 9 blocks and player reach is under 5, so a builder laying out a row of
+boards could never place the second one where they wanted it.
 
 `onUse` fires on **both** logical sides. The client call returns
 `ActionResult.SUCCESS` for the arm swing and does nothing else; all packet work
@@ -362,8 +439,10 @@ sits behind `!world.isClient`.
 Server-side it sends S2C `open_picker` with the block pos and current columns —
 but only when `ServerPlayNetworking.canSend(player, OPEN_PICKER)` is true. A
 vanilla client without the mod silently drops unknown channels and would see
-nothing happen, so that branch instead sends a chat hint naming `/leaderboard`
-as the client-free alternative.
+nothing happen, so that branch instead sends an action-bar message (not chat,
+so repeated pokes do not spam the log) reading roughly *"Install Leaderstats to
+change this board, or use /leaderboard"*. Sent at most once per player per 5
+seconds.
 
 Choosing a stat sends C2S `set_block_stat {BlockPos, int columnIndex, StatKey}`.
 **Server-side validation is mandatory** — it is a client-controlled packet:
@@ -401,7 +480,7 @@ now much easier to reach — uses the existing "No data yet." treatment.
 
 Three category tabs mirroring vanilla, plus a search box:
 
-- **General** — `Registries.CUSTOM_STAT`, ~78 entries
+- **General** — `Registries.CUSTOM_STAT`, 75 entries
 - **Items** — `Registries.BLOCK` × `{mined}` (~1060) and `Registries.ITEM` ×
   `{crafted, used, broken, picked_up, dropped}` (~6600), ~7700 rows
 - **Mobs** — `Registries.ENTITY_TYPE` × `{killed, killed_by}`, ~250 rows
@@ -434,8 +513,12 @@ The single existing S2C channel is **replaced**, not extended:
 
 `openScreen` disambiguates the two ways `board_data` arrives: true for the
 `/showleaderboard` case (open a fresh `LeaderboardScreen`), false for the
-`request_board` case (update the screen already open, ignoring the packet if
-the player has since closed it).
+`request_board` case. For the `false` case the client applies the packet only
+if **both**: `MinecraftClient.currentScreen` is a `LeaderboardScreen`, **and**
+the packet's `StatKey` equals that screen's pending key. The second condition
+discards stale replies — there is no request id, so a player who changes stat
+twice in quick succession could otherwise have the first reply land after the
+second.
 
 `request_board` clamps `limit` server-side to `[1, 50]` rather than trusting the
 client, and validates the `StatKey` with `isValid()`. `LeaderboardEntry` is
@@ -454,18 +537,24 @@ macros and muscle memory do not break, and gains the general form:
 
 Both identifier arguments are `IdentifierArgumentType` with suggestion
 providers: `stat_type` suggests `Registries.STAT_TYPE` ids plus
-`statsboard:special`; `stat` suggests the ids of the chosen type's registry.
-An identifier that fails `isValid()` produces a clear command error rather than
-failing silently or resolving to `minecraft:air`.
+`statsboard:special`; `stat` suggests the ids of the chosen type's registry,
+or the single id `statsboard:advancements` when the type is
+`statsboard:special`. The executor treats `statsboard:special` /
+`statsboard:advancements` as `StatKey.ADVANCEMENTS` and rejects any other value
+under that type. An identifier that fails `isValid()` produces a clear command
+error rather than failing silently or resolving to `minecraft:air`.
 
 Plain-text output formats through `StatValueFormatter`, never `Stat.format`.
+The raw, unformatted value is what crosses the wire in `LeaderboardEntry.count`
+— ticks for time stats, centimetres for distance stats — and formatting happens
+only at the point of display.
 
 ### Resources
 
 - `assets/statsboard/lang/en_us.json` gains keys for: the picker screen title,
   its three category tabs, the search box placeholder, the "Change stat…"
   button, the Deaths/Advancements quick buttons, the `statsboard:advancements`
-  pseudo-stat name, and the vanilla-client chat hint.
+  pseudo-stat name, and the vanilla-client action-bar hint.
 - `fabric.mod.json`'s description ("tracks and displays the top players for
   deaths and advancements") is rewritten.
 
@@ -481,19 +570,25 @@ What the playtest must confirm:
 
 1. A fresh leaderboard block still shows deaths and advancements, as before.
 2. Right-clicking the block's base nub opens the picker, **and** right-clicking
-   nearby with the wand opens it too. Choosing a stat retargets that column and
-   the hologram updates within one refresh interval.
-3. Picker search finds an item stat (e.g. "diamond ore" under mined) and a mob
+   the wand while aiming at a hologram figure over open ground opens it too —
+   that second gesture is the one the whole entry-point design exists for, and
+   it is the one that fails if only `useOnBlock` is implemented. Choosing a
+   stat retargets that column and the hologram updates within one refresh
+   interval.
+3. Sneak-right-clicking the wand next to an existing board places a second
+   board rather than opening the picker.
+4. Picker search finds an item stat (e.g. "diamond ore" under mined) and a mob
    stat, and choosing it yields a correct board.
-4. Formatting is right: a distance stat reads in m/km, play time reads as a
-   duration, damage reads with one decimal, plain counts read as integers.
-5. Two players produce correctly *ordered* boards, and an offline player's
+5. Formatting matches the player's own vanilla Statistics screen **exactly**,
+   checked side by side: a distance stat, play time, a damage stat, and a plain
+   count. Two decimal places, single largest time unit.
+6. Two players produce correctly *ordered* boards, and an offline player's
    values persist and still appear after they disconnect.
-6. **The advancement count is correct** — matches the player's real total and
+7. **The advancement count is correct** — matches the player's real total and
    excludes recipe advancements.
-7. A world with a pre-existing `statsboard.json` from the old version loads
+8. A world with a pre-existing `statsboard.json` from the old version loads
    without error.
-8. No `ConcurrentModificationException` or corrupted-stat symptoms after a
+9. No `ConcurrentModificationException` or corrupted-stat symptoms after a
    sustained session with both clients actively mining and crafting while the
    picker is open — the threading constraint holding in practice.
 
