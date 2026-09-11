@@ -188,9 +188,7 @@ public class LeaderboardScreen extends Screen {
 
     /** The reply opens the profile screen; see the PROFILE_DATA receiver. */
     private void openProfile(UUID uuid) {
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeUuid(uuid);
-        ClientPlayNetworking.send(StatsboardNetworking.REQUEST_PROFILE, buf);
+        ProfileRequests.requestOpen(this, uuid);
     }
 
     /** 0 at the moment the screen opens, easing up to 1 over durationMs. */
@@ -310,7 +308,14 @@ public class LeaderboardScreen extends Screen {
                     int stripeColor = rank == 1 ? 0x33D4AF37 : rank == 2 ? 0x33C0C0C0 : 0x33CD7F32;
                     context.fill(x + 4, rowY - 1, x + width - 4, rowY + ROW_HEIGHT - 3, stripeColor);
                 }
-                rowHits.add(new Hit(x + 4, rowY - 1, width - 8, ROW_HEIGHT, entry.uuid()));
+                // Clamped to the scissor band: a partially scrolled row is drawn
+                // clipped, so its full rect would put a click target over the
+                // header and the divider above the list.
+                int hitTop = Math.max(rowY - 1, contentTop);
+                int hitBottom = Math.min(rowY - 1 + ROW_HEIGHT, contentBottom);
+                if (hitBottom > hitTop) {
+                    rowHits.add(new Hit(x + 4, hitTop, width - 8, hitBottom - hitTop, entry.uuid()));
+                }
 
                 int color = rank == 1 ? 0xFFFFD700 : rank == 2 ? 0xFFE0E0E0 : rank == 3 ? 0xFFCD7F32 : 0xFFFFFFFF;
                 String line = rank + ". " + entry.name() + "  -  "
@@ -354,9 +359,12 @@ public class LeaderboardScreen extends Screen {
 
             if (rankIndex < list.size()) {
                 LeaderboardEntry entry = list.get(rankIndex);
-                // The whole slot column, so the figure, its nameplate and the
-                // pedestal all open the profile.
-                podiumHits.add(new Hit(slotX, y, slotWidth, height, entry.uuid()));
+                // The figure and its pedestal only. Spanning the whole slot
+                // column would make any click in the panel's empty upper half
+                // fire a network request.
+                int hitTop = pedestalTop - modelSize[slot] - 8;
+                podiumHits.add(new Hit(slotX + 4, Math.max(hitTop, y),
+                        slotWidth - 8, baseY - Math.max(hitTop, y) + 10, entry.uuid()));
                 int size = modelSize[slot];
                 int modelBottom = pedestalTop + 4;
                 int modelTop = modelBottom - size;

@@ -34,7 +34,16 @@ public final class StatsboardServerNetworking {
      * keys, so it is no defence against distinct ones.
      */
     private static final long REQUEST_COOLDOWN_MS = 250;
-    private static final Map<UUID, Long> LAST_REQUEST = new ConcurrentHashMap<>();
+
+    /**
+     * Separate buckets per request kind. Sharing one would let the leaderboard's
+     * periodic refresh swallow a profile click that happened to land within the
+     * window, and a dropped click is a dead no-op with no retry. A profile is
+     * O(one player's stats) rather than a full sort, so it does not need to be
+     * throttled against board queries anyway.
+     */
+    private static final Map<UUID, Long> LAST_BOARD_REQUEST = new ConcurrentHashMap<>();
+    private static final Map<UUID, Long> LAST_PROFILE_REQUEST = new ConcurrentHashMap<>();
 
     private StatsboardServerNetworking() {
     }
@@ -55,7 +64,7 @@ public final class StatsboardServerNetworking {
                         return;
                     }
                     server.execute(() -> {
-                        if (!key.get().isValid() || !allowRequest(player)) {
+                        if (!key.get().isValid() || !allowRequest(LAST_BOARD_REQUEST, player)) {
                             return;
                         }
                         sendBoard(player, key.get(), limit, false);
@@ -102,23 +111,26 @@ public final class StatsboardServerNetworking {
                         return;
                     }
                     server.execute(() -> {
-                        if (allowRequest(player)) {
+                        if (allowRequest(LAST_PROFILE_REQUEST, player)) {
                             sendProfile(player, target);
                         }
                     });
                 });
 
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                LAST_REQUEST.remove(handler.getPlayer().getUuid()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            UUID uuid = handler.getPlayer().getUuid();
+            LAST_BOARD_REQUEST.remove(uuid);
+            LAST_PROFILE_REQUEST.remove(uuid);
+        });
     }
 
-    private static boolean allowRequest(ServerPlayerEntity player) {
+    private static boolean allowRequest(Map<UUID, Long> bucket, ServerPlayerEntity player) {
         long now = System.currentTimeMillis();
-        Long last = LAST_REQUEST.get(player.getUuid());
+        Long last = bucket.get(player.getUuid());
         if (last != null && now - last < REQUEST_COOLDOWN_MS) {
             return false;
         }
-        LAST_REQUEST.put(player.getUuid(), now);
+        bucket.put(player.getUuid(), now);
         return true;
     }
 

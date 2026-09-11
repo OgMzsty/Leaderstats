@@ -3,6 +3,7 @@ package com.statsboard.network;
 import com.statsboard.LeaderboardEntry;
 import com.statsboard.ProfileEntry;
 import com.statsboard.stat.StatKey;
+import com.statsboard.stat.StatQuery;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
 
@@ -78,7 +79,9 @@ public class StatsboardNetworking {
     }
 
     public static List<ProfileEntry> readProfile(PacketByteBuf buf) {
-        int size = buf.readInt();
+        // Clamped before allocating: a hostile or buggy server sending
+        // Integer.MAX_VALUE would otherwise OOM the client before it reads a byte.
+        int size = Math.max(0, Math.min(buf.readInt(), StatQuery.MAX_PROFILE_ENTRIES));
         List<ProfileEntry> list = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             list.add(new ProfileEntry(StatKey.read(buf), buf.readInt()));

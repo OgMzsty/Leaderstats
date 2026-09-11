@@ -6,6 +6,8 @@ import com.statsboard.block.ModBlockEntities;
 import com.statsboard.gui.LeaderboardConfigScreen;
 import com.statsboard.gui.LeaderboardScreen;
 import com.statsboard.gui.PlayerProfileScreen;
+import com.statsboard.gui.ProfileRequests;
+import net.minecraft.client.gui.screen.Screen;
 import com.statsboard.network.StatsboardNetworking;
 import com.statsboard.stat.StatKey;
 import java.util.UUID;
@@ -78,8 +80,15 @@ public class StatsboardModClient implements ClientModInitializer {
                         // player and lose their scroll position.
                         if (client.currentScreen instanceof PlayerProfileScreen profile) {
                             profile.acceptProfile(uuid, entries);
-                        } else {
-                            client.setScreen(new PlayerProfileScreen(client.currentScreen, uuid,
+                            return;
+                        }
+                        // Otherwise only open if this reply answers a click the
+                        // player actually made, and the screen they clicked from
+                        // is still up. A reply landing after they escaped out
+                        // would otherwise pop a GUI over live gameplay.
+                        Screen parent = ProfileRequests.consumeOpen(client, uuid);
+                        if (parent != null) {
+                            client.setScreen(new PlayerProfileScreen(parent, uuid,
                                     finalName, finalSkinValue, finalSkinSignature, entries));
                         }
                     });

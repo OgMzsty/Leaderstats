@@ -5,6 +5,7 @@ import com.statsboard.LeaderboardEntry;
 import com.statsboard.ProfileEntry;
 import com.statsboard.mixin.StatHandlerAccessor;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import com.statsboard.PlayerProfileCache;
 import com.statsboard.PlayerStats;
 import net.minecraft.advancement.Advancement;
@@ -67,8 +68,17 @@ public final class StatQuery {
         ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
 
         if (player != null) {
+            // Copied under the map's own monitor before iterating: StatHandler
+            // wraps it with Object2IntMaps.synchronize, whose wrapper does not
+            // cover iteration. Mutation is server-thread-only today, but an
+            // uncaught CME here would land inside server.execute and kill the
+            // tick, and the copy costs one allocation.
             Object2IntMap<Stat<?>> live = ((StatHandlerAccessor) player.getStatHandler()).getStatMap();
-            for (Object2IntMap.Entry<Stat<?>> entry : live.object2IntEntrySet()) {
+            Object2IntMap<Stat<?>> snapshotOfLive;
+            synchronized (live) {
+                snapshotOfLive = new Object2IntOpenHashMap<>(live);
+            }
+            for (Object2IntMap.Entry<Stat<?>> entry : snapshotOfLive.object2IntEntrySet()) {
                 if (entry.getIntValue() <= 0) {
                     continue;
                 }
@@ -97,9 +107,9 @@ public final class StatQuery {
     }
 
     /**
-     * Turns a live Stat back into its identifier pair. Null when either side has
-     * no registered id, which a mod can cause by handing out a Stat for a value
-     * it never registered.
+     * Turns a live Stat back into its identifier pair, or null if either side is
+     * unregistered - which a mod can cause by handing out a Stat for a value it
+     * never registered, or by being removed while a player was online.
      */
     private static StatKey keyOf(Stat<?> stat) {
         Identifier typeId = Registries.STAT_TYPE.getId(stat.getType());
@@ -110,9 +120,18 @@ public final class StatQuery {
         return valueId == null ? null : new StatKey(typeId, valueId);
     }
 
+    /**
+     * Uses getKey rather than getId. BLOCK, ITEM and ENTITY_TYPE are
+     * DefaultedRegistry, whose getId hands back minecraft:air for an unknown
+     * value instead of null - so getId would turn an unregistered stat into a
+     * plausible-looking (mined, air) row, and several of them into duplicates.
+     * getKey is not overridden by the defaulted subclass.
+     */
     @SuppressWarnings("unchecked")
     private static <T> Identifier valueIdOf(StatType<T> type, Object value) {
-        return type.getRegistry().getId((T) value);
+        return type.getRegistry().getKey((T) value)
+                .map(net.minecraft.registry.RegistryKey::getValue)
+                .orElse(null);
     }
 
     /** Called at the end of every server tick; nothing is cached across ticks. */

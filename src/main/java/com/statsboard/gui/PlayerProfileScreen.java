@@ -91,6 +91,7 @@ public class PlayerProfileScreen extends Screen {
     private TextFieldWidget searchBox;
     private int leftX, leftWidth, rightX, rightWidth, panelBottom;
     private int backX, backY, backWidth, backHeight;
+    private int tabWidth, generalX, itemsX, mobsX;
 
     /**
      * @param name          may be a raw UUID string when the server has no real
@@ -201,19 +202,37 @@ public class PlayerProfileScreen extends Screen {
         rightWidth = this.width - rightX - 20;
         panelBottom = this.height - PANEL_BOTTOM_MARGIN;
 
+        // init() runs again on every resize, so the old widget's text has to be
+        // carried over or the box would blank while the list stayed filtered.
+        String previousSearch = searchBox == null ? "" : searchBox.getText();
+
         searchBox = new TextFieldWidget(this.textRenderer, leftX + 6, SEARCH_Y, leftWidth - 12, SEARCH_HEIGHT,
                 Text.translatable("statsboard.picker.search"));
         searchBox.setPlaceholder(Text.translatable("statsboard.picker.search"));
+        searchBox.setText(previousSearch);
         searchBox.setChangedListener(text -> {
             refreshFilter();
             scrollOffset = 0;
         });
         this.addSelectableChild(searchBox);
 
+        // Tabs are laid out here rather than in render so the drawing and the
+        // hit testing cannot drift apart, and the width shrinks to fit rather
+        // than running off the left edge on a narrow window or a large GUI scale.
+        int gap = 4;
+        tabWidth = Math.min(TAB_WIDTH, Math.max(40, (leftWidth - gap * 2) / 3));
+        int tabsStartX = leftX + leftWidth / 2 - (tabWidth * 3 + gap * 2) / 2;
+        generalX = tabsStartX;
+        itemsX = tabsStartX + tabWidth + gap;
+        mobsX = tabsStartX + (tabWidth + gap) * 2;
+
         backWidth = 80;
         backHeight = 20;
         backX = this.width / 2 - backWidth / 2;
         backY = this.height - 30;
+
+        refreshFilter();
+        scrollOffset = MathHelper.clamp(scrollOffset, 0, maxScroll());
     }
 
     /**
@@ -235,9 +254,7 @@ public class PlayerProfileScreen extends Screen {
 
     private void requestProfile() {
         lastRequestMs = Util.getMeasuringTimeMs();
-        PacketByteBuf buf = PacketByteBufs.create();
-        buf.writeUuid(uuid);
-        ClientPlayNetworking.send(StatsboardNetworking.REQUEST_PROFILE, buf);
+        ProfileRequests.requestRefresh(uuid);
     }
 
     private int maxScroll() {
@@ -253,18 +270,12 @@ public class PlayerProfileScreen extends Screen {
                 Text.literal(name).formatted(net.minecraft.util.Formatting.BOLD, net.minecraft.util.Formatting.GOLD),
                 this.width / 2, 10, 0xFFFFFF);
 
-        int tabCenterX = leftX + leftWidth / 2;
-        int tabsStartX = tabCenterX - (TAB_WIDTH * 3 + 8) / 2;
-        int generalX = tabsStartX;
-        int itemsX = tabsStartX + TAB_WIDTH + 4;
-        int mobsX = tabsStartX + (TAB_WIDTH + 4) * 2;
-
-        drawStyledButton(context, generalX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, Text.translatable("statsboard.picker.general"),
-                currentCategory == Category.GENERAL, isInside(mouseX, mouseY, generalX, TABS_Y, TAB_WIDTH, TAB_HEIGHT));
-        drawStyledButton(context, itemsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, Text.translatable("statsboard.picker.items"),
-                currentCategory == Category.ITEMS, isInside(mouseX, mouseY, itemsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT));
-        drawStyledButton(context, mobsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT, Text.translatable("statsboard.picker.mobs"),
-                currentCategory == Category.MOBS, isInside(mouseX, mouseY, mobsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT));
+        drawStyledButton(context, generalX, TABS_Y, tabWidth, TAB_HEIGHT, Text.translatable("statsboard.picker.general"),
+                currentCategory == Category.GENERAL, isInside(mouseX, mouseY, generalX, TABS_Y, tabWidth, TAB_HEIGHT));
+        drawStyledButton(context, itemsX, TABS_Y, tabWidth, TAB_HEIGHT, Text.translatable("statsboard.picker.items"),
+                currentCategory == Category.ITEMS, isInside(mouseX, mouseY, itemsX, TABS_Y, tabWidth, TAB_HEIGHT));
+        drawStyledButton(context, mobsX, TABS_Y, tabWidth, TAB_HEIGHT, Text.translatable("statsboard.picker.mobs"),
+                currentCategory == Category.MOBS, isInside(mouseX, mouseY, mobsX, TABS_Y, tabWidth, TAB_HEIGHT));
 
         drawStyledPanel(context, leftX, PANEL_TOP, leftWidth, panelBottom - PANEL_TOP, 1f);
         renderList(context, leftX, PANEL_TOP, leftWidth, panelBottom - PANEL_TOP, mouseX, mouseY);
@@ -440,21 +451,15 @@ public class PlayerProfileScreen extends Screen {
             int mx = (int) mouseX;
             int my = (int) mouseY;
 
-            int tabCenterX = leftX + leftWidth / 2;
-            int tabsStartX = tabCenterX - (TAB_WIDTH * 3 + 8) / 2;
-            int generalX = tabsStartX;
-            int itemsX = tabsStartX + TAB_WIDTH + 4;
-            int mobsX = tabsStartX + (TAB_WIDTH + 4) * 2;
-
-            if (isInside(mx, my, generalX, TABS_Y, TAB_WIDTH, TAB_HEIGHT)) {
+            if (isInside(mx, my, generalX, TABS_Y, tabWidth, TAB_HEIGHT)) {
                 switchCategory(Category.GENERAL);
                 return true;
             }
-            if (isInside(mx, my, itemsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT)) {
+            if (isInside(mx, my, itemsX, TABS_Y, tabWidth, TAB_HEIGHT)) {
                 switchCategory(Category.ITEMS);
                 return true;
             }
-            if (isInside(mx, my, mobsX, TABS_Y, TAB_WIDTH, TAB_HEIGHT)) {
+            if (isInside(mx, my, mobsX, TABS_Y, tabWidth, TAB_HEIGHT)) {
                 switchCategory(Category.MOBS);
                 return true;
             }
@@ -475,6 +480,7 @@ public class PlayerProfileScreen extends Screen {
 
     @Override
     public void close() {
+        ProfileRequests.clear();
         this.client.setScreen(parent);
     }
 
