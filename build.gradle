@@ -12,6 +12,31 @@ repositories {
 	// Add extra repositories here if you need them
 }
 
+// Two named clients plus the dedicated server, each in its own run directory,
+// so a multiplayer playtest can be driven entirely from Gradle. The clients use
+// distinct offline usernames; the server needs online-mode=false to accept them.
+loom {
+	runs {
+		clientAlpha {
+			client()
+			name = "Client Alpha"
+			runDir = "run/clientAlpha"
+			programArgs "--username", "Alpha"
+		}
+		clientBravo {
+			client()
+			name = "Client Bravo"
+			runDir = "run/clientBravo"
+			programArgs "--username", "Bravo"
+		}
+		server {
+			server()
+			name = "Playtest Server"
+			runDir = "run/server"
+		}
+	}
+}
+
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
