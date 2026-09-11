@@ -152,12 +152,14 @@ The single identity for "which stat is this leaderboard about".
   Text name;
   if (v instanceof Block b) name = b.getName();
   else if (v instanceof Item i) name = i.getName();
-  else if (v instanceof EntityType<?> e) name = e.getName();
+  else if (v instanceof EntityType<?> e) name = Text.translatable(e.getTranslationKey());
   else name = Text.literal(valueId.toString());
   ```
 
-  Deliberately does **not** use `StatType.getName()`, which lazily writes a
-  non-volatile `Text name` field and so is not safe to call from the client.
+  Deliberately uses neither `StatType.getName()` nor `EntityType.getName()`:
+  both lazily cache a `MutableText` in a non-volatile field, which the render
+  thread and the integrated server thread would race on. `Block.getName()` and
+  `Item.getName()` are fine, since they only cache a `String`.
 
 - Wire codec: `buf.writeIdentifier(typeId)` then `buf.writeIdentifier(valueId)`;
   read in the same order.
