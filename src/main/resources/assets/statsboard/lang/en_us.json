@@ -1,5 +1,21 @@
 {
   "item.statsboard.leaderboard_stick": "Leaderboard Wand",
   "key.statsboard.open_leaderboard": "Open Leaderboard",
-  "key.categories.statsboard": "Statsboard"
+  "key.categories.statsboard": "Statsboard",
+
+  "statsboard.stat.advancements": "Advancements",
+
+  "statsboard.picker.title": "Choose a statistic",
+  "statsboard.picker.general": "General",
+  "statsboard.picker.items": "Items",
+  "statsboard.picker.mobs": "Mobs",
+  "statsboard.picker.search": "Search...",
+  "statsboard.picker.no_matches": "No matches.",
+
+  "statsboard.config.title": "Leaderboard columns",
+  "statsboard.config.column": "Column %s",
+
+  "statsboard.screen.change_stat": "Change stat...",
+
+  "statsboard.hint.client_required": "Install Leaderstats to change this board, or use /leaderboard"
 }

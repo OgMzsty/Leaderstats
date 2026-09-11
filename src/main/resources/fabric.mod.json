@@ -3,7 +3,7 @@
   "id": "statsboard",
   "version": "${version}",
   "name": "Statsboard",
-  "description": "Adds a /leaderboard command that tracks and displays the top players for deaths and advancements.",
+  "description": "Leaderboards for any vanilla Minecraft statistic - in chat, in a full-screen GUI, and as floating in-world holograms.",
   "authors": [
     "You"
   ],

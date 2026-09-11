@@ -3,6 +3,12 @@ package com.statsboard.gui;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.statsboard.LeaderboardEntry;
+import com.statsboard.network.StatsboardNetworking;
+import com.statsboard.stat.StatKey;
+import com.statsboard.stat.StatValueFormatter;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+import net.minecraft.network.PacketByteBuf;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -23,8 +29,6 @@ import java.util.Map;
 import java.util.UUID;
 
 public class LeaderboardScreen extends Screen {
-    private enum Tab { DEATHS, ADVANCEMENTS }
-
     private static final int ROW_HEIGHT = 14;
     private static final int PANEL_TOP = 60;
     private static final int PANEL_BOTTOM_MARGIN = 40;
@@ -44,21 +48,39 @@ public class LeaderboardScreen extends Screen {
     // of crashing the whole screen.
     private static boolean use3DModel = true;
 
-    private final List<LeaderboardEntry> deaths;
-    private final List<LeaderboardEntry> advancements;
     private final Map<UUID, OtherClientPlayerEntity> entityCache = new HashMap<>();
     private final long openTimeMs = System.currentTimeMillis();
 
-    private Tab currentTab = Tab.DEATHS;
+    private List<LeaderboardEntry> entries;
+    private StatKey statKey;
+    /** The stat we last asked the server for; replies for anything else are stale. */
+    private StatKey pendingKey;
     private double scrollOffset = 0;
 
-    private int deathsTabX, advTabX, tabsY, tabWidth, tabHeight;
+    private int deathsTabX, advTabX, pickerX, tabsY, tabWidth, tabHeight;
     private int closeX, closeY, closeWidth, closeHeight;
 
-    public LeaderboardScreen(List<LeaderboardEntry> deaths, List<LeaderboardEntry> advancements) {
+    public LeaderboardScreen(StatKey statKey, List<LeaderboardEntry> entries) {
         super(Text.literal("Statsboard"));
-        this.deaths = deaths;
-        this.advancements = advancements;
+        this.statKey = statKey;
+        this.pendingKey = statKey;
+        this.entries = entries;
+    }
+
+    /**
+     * Applies a board the server sent for an already-open screen. Ignored unless
+     * it answers the most recent request - there is no request id, so a player
+     * who switches stat twice quickly could otherwise see the first reply land
+     * after the second.
+     */
+    public void acceptBoard(StatKey key, List<LeaderboardEntry> incoming) {
+        if (!key.equals(pendingKey)) {
+            return;
+        }
+        this.statKey = key;
+        this.entries = incoming;
+        this.scrollOffset = 0;
+        this.entityCache.clear();
     }
 
     @Override
@@ -68,8 +90,9 @@ public class LeaderboardScreen extends Screen {
         tabWidth = 100;
         tabHeight = 20;
         tabsY = 30;
-        deathsTabX = centerX - 104;
-        advTabX = centerX + 4;
+        deathsTabX = centerX - 156;
+        advTabX = centerX - 50;
+        pickerX = centerX + 56;
 
         closeWidth = 80;
         closeHeight = 20;
@@ -77,13 +100,17 @@ public class LeaderboardScreen extends Screen {
         closeY = this.height - 30;
     }
 
-    private void switchTab(Tab tab) {
-        this.currentTab = tab;
-        this.scrollOffset = 0;
+    /** Asks the server for a different stat; the reply arrives via acceptBoard. */
+    private void requestStat(StatKey key) {
+        this.pendingKey = key;
+        PacketByteBuf buf = PacketByteBufs.create();
+        key.write(buf);
+        buf.writeInt(50);
+        ClientPlayNetworking.send(StatsboardNetworking.REQUEST_BOARD, buf);
     }
 
     private List<LeaderboardEntry> currentList() {
-        return currentTab == Tab.DEATHS ? deaths : advancements;
+        return entries;
     }
 
     /** 0 at the moment the screen opens, easing up to 1 over durationMs. */
@@ -119,9 +146,12 @@ public class LeaderboardScreen extends Screen {
         context.getMatrices().pop();
 
         drawStyledButton(context, deathsTabX, tabsY, tabWidth, tabHeight, "Deaths",
-                currentTab == Tab.DEATHS, isInside(mouseX, mouseY, deathsTabX, tabsY, tabWidth, tabHeight));
+                StatKey.DEATHS.equals(statKey), isInside(mouseX, mouseY, deathsTabX, tabsY, tabWidth, tabHeight));
         drawStyledButton(context, advTabX, tabsY, tabWidth, tabHeight, "Advancements",
-                currentTab == Tab.ADVANCEMENTS, isInside(mouseX, mouseY, advTabX, tabsY, tabWidth, tabHeight));
+                StatKey.ADVANCEMENTS.equals(statKey),
+                isInside(mouseX, mouseY, advTabX, tabsY, tabWidth, tabHeight));
+        drawStyledButton(context, pickerX, tabsY, tabWidth, tabHeight, "Change stat...",
+                false, isInside(mouseX, mouseY, pickerX, tabsY, tabWidth, tabHeight));
         drawStyledButton(context, closeX, closeY, closeWidth, closeHeight, "Close",
                 false, isInside(mouseX, mouseY, closeX, closeY, closeWidth, closeHeight));
 
@@ -174,8 +204,8 @@ public class LeaderboardScreen extends Screen {
 
     private void renderList(DrawContext context, int x, int y, int width, int height) {
         List<LeaderboardEntry> list = currentList();
-        String header = currentTab == Tab.DEATHS ? "\u2620 Deaths" : "\u2605 Advancements";
-        context.drawTextWithShadow(this.textRenderer, header, x + 8, y + 6, GOLD_TRIM | 0xFF000000);
+        context.drawTextWithShadow(this.textRenderer, statKey.displayName(), x + 8, y + 6,
+                GOLD_TRIM | 0xFF000000);
         context.fill(x + 6, y + 17, x + width - 6, y + 18, (GOLD_TRIM | 0xFF000000) & 0x66FFFFFF);
 
         int contentTop = y + 22;
@@ -197,7 +227,8 @@ public class LeaderboardScreen extends Screen {
                     context.fill(x + 4, rowY - 1, x + width - 4, rowY + ROW_HEIGHT - 3, stripeColor);
                 }
                 int color = rank == 1 ? 0xFFFFD700 : rank == 2 ? 0xFFE0E0E0 : rank == 3 ? 0xFFCD7F32 : 0xFFFFFFFF;
-                String line = rank + ". " + entry.name() + "  -  " + entry.count();
+                String line = rank + ". " + entry.name() + "  -  "
+                        + StatValueFormatter.format(statKey, entry.count());
                 context.drawTextWithShadow(this.textRenderer, line, x + 8, rowY, color);
             }
             rowY += ROW_HEIGHT;
@@ -264,7 +295,8 @@ public class LeaderboardScreen extends Screen {
                     drawPlayerHead(context, skin, centerX - headSize / 2, pedestalTop - headSize - 4, headSize);
                 }
 
-                context.drawCenteredTextWithShadow(this.textRenderer, String.valueOf(entry.count()),
+                context.drawCenteredTextWithShadow(this.textRenderer,
+                        StatValueFormatter.format(statKey, entry.count()),
                         centerX, baseY + 4, 0xFFFFFFFF);
                 if (!drewModel) {
                     // The 3D model already shows its own accurately-positioned
@@ -368,11 +400,15 @@ public class LeaderboardScreen extends Screen {
             int mx = (int) mouseX;
             int my = (int) mouseY;
             if (isInside(mx, my, deathsTabX, tabsY, tabWidth, tabHeight)) {
-                switchTab(Tab.DEATHS);
+                requestStat(StatKey.DEATHS);
                 return true;
             }
             if (isInside(mx, my, advTabX, tabsY, tabWidth, tabHeight)) {
-                switchTab(Tab.ADVANCEMENTS);
+                requestStat(StatKey.ADVANCEMENTS);
+                return true;
+            }
+            if (isInside(mx, my, pickerX, tabsY, tabWidth, tabHeight)) {
+                this.client.setScreen(new StatPickerScreen(this, this::requestStat));
                 return true;
             }
             if (isInside(mx, my, closeX, closeY, closeWidth, closeHeight)) {

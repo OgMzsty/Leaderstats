@@ -8,6 +8,11 @@ import net.minecraft.block.ShapeContext;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.block.entity.BlockEntityTicker;
 import net.minecraft.block.entity.BlockEntityType;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.world.BlockView;
@@ -39,6 +44,27 @@ public class LeaderboardBlock extends BlockWithEntity {
     @Override
     public BlockRenderType getRenderType(BlockState state) {
         return BlockRenderType.INVISIBLE;
+    }
+
+    /**
+     * Fires on both logical sides. The client side only returns SUCCESS so the
+     * arm swings; everything real is behind the isClient guard.
+     *
+     * <p>Note this only catches clicks on the block's own 4x1x4 nub. Players
+     * aiming at the hologram, which stands metres away, hit nothing at all -
+     * that gesture is handled by the wand instead.
+     */
+    @Override
+    public ActionResult onUse(BlockState state, World world, BlockPos pos, PlayerEntity player,
+                              Hand hand, BlockHitResult hit) {
+        if (world.isClient) {
+            return ActionResult.SUCCESS;
+        }
+        if (player instanceof ServerPlayerEntity serverPlayer
+                && world.getBlockEntity(pos) instanceof LeaderboardBlockEntity blockEntity) {
+            LeaderboardInteraction.openPicker(serverPlayer, pos, blockEntity);
+        }
+        return ActionResult.SUCCESS;
     }
 
     @Override

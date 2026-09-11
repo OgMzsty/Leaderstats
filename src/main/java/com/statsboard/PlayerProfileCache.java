@@ -20,11 +20,17 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Holds per-player statistics in memory and persists them as
- * "statsboard.json" inside the world save folder, so stats survive
- * server restarts and travel with the world.
+ * Remembers each player's name and Mojang skin texture so the leaderboard can
+ * render them while they are offline. Persisted as "statsboard.json" in the
+ * world root.
+ *
+ * <p>This used to also hold the mod's own deaths and advancements counters.
+ * Those are gone - vanilla's minecraft:deaths and the advancement files are the
+ * source of truth now - but the file name and shape are otherwise unchanged.
+ * GSON ignores JSON members with no matching field, so an old file still loads
+ * and its stale counters are simply dropped. No migration step is needed.
  */
-public class StatsManager {
+public class PlayerProfileCache {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Map<UUID, PlayerStats> STATS = new HashMap<>();
     private static final Map<UUID, String> NAMES = new HashMap<>();
@@ -48,8 +54,6 @@ public class StatsManager {
                 for (StatsEntry entry : data.players) {
                     UUID uuid = UUID.fromString(entry.uuid);
                     PlayerStats stats = new PlayerStats();
-                    stats.deaths = entry.deaths;
-                    stats.advancements = entry.advancements;
                     stats.skinTextureValue = entry.skinTextureValue;
                     stats.skinTextureSignature = entry.skinTextureSignature;
                     STATS.put(uuid, stats);
@@ -70,8 +74,6 @@ public class StatsManager {
             StatsEntry entry = new StatsEntry();
             entry.uuid = e.getKey().toString();
             entry.name = NAMES.getOrDefault(e.getKey(), "Unknown");
-            entry.deaths = e.getValue().deaths;
-            entry.advancements = e.getValue().advancements;
             entry.skinTextureValue = e.getValue().skinTextureValue;
             entry.skinTextureSignature = e.getValue().skinTextureSignature;
             return entry;
@@ -90,31 +92,11 @@ public class StatsManager {
         dirty = false;
     }
 
-    public static void markDirty() {
-        dirty = true;
-    }
-
     public static boolean isDirty() {
         return dirty;
     }
 
-    private static PlayerStats getOrCreate(UUID uuid) {
-        return STATS.computeIfAbsent(uuid, u -> new PlayerStats());
-    }
-
-    public static void recordDeath(UUID uuid, String name) {
-        NAMES.put(uuid, name);
-        getOrCreate(uuid).deaths++;
-        markDirty();
-    }
-
-    public static void recordAdvancement(UUID uuid, String name) {
-        NAMES.put(uuid, name);
-        getOrCreate(uuid).advancements++;
-        markDirty();
-    }
-
-    /** Saves the player's Mojang textures property so their skin can be rendered even while offline. */
+    /** Saves the player's Mojang textures property so their skin renders while offline. */
     public static void recordPlayerProfile(GameProfile profile) {
         if (profile == null || profile.getId() == null) {
             return;
@@ -128,33 +110,25 @@ public class StatsManager {
             return;
         }
 
-        PlayerStats stats = getOrCreate(uuid);
+        PlayerStats stats = STATS.computeIfAbsent(uuid, u -> new PlayerStats());
         String signature = textures.hasSignature() ? textures.getSignature() : null;
         if (!textures.getValue().equals(stats.skinTextureValue)
                 || (signature == null ? stats.skinTextureSignature != null
                                       : !signature.equals(stats.skinTextureSignature))) {
             stats.skinTextureValue = textures.getValue();
             stats.skinTextureSignature = signature;
-            markDirty();
+            dirty = true;
         }
     }
 
-    public static List<Map.Entry<UUID, PlayerStats>> topDeaths(int limit) {
-        return STATS.entrySet().stream()
-                .sorted((a, b) -> Integer.compare(b.getValue().deaths, a.getValue().deaths))
-                .limit(limit)
-                .collect(Collectors.toList());
+    /** Null when this player has never joined since the mod was installed. */
+    public static PlayerStats skinOf(UUID uuid) {
+        return STATS.get(uuid);
     }
 
-    public static List<Map.Entry<UUID, PlayerStats>> topAdvancements(int limit) {
-        return STATS.entrySet().stream()
-                .sorted((a, b) -> Integer.compare(b.getValue().advancements, a.getValue().advancements))
-                .limit(limit)
-                .collect(Collectors.toList());
-    }
-
+    /** Null rather than a placeholder, so callers can fall through to other name sources. */
     public static String nameOf(UUID uuid) {
-        return NAMES.getOrDefault(uuid, uuid.toString().substring(0, 8));
+        return NAMES.get(uuid);
     }
 
     private static class StatsData {
@@ -164,8 +138,6 @@ public class StatsManager {
     private static class StatsEntry {
         String uuid;
         String name;
-        int deaths;
-        int advancements;
         String skinTextureValue;
         String skinTextureSignature;
     }

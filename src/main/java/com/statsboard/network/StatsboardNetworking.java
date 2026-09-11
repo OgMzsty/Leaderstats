@@ -1,6 +1,7 @@
 package com.statsboard.network;
 
 import com.statsboard.LeaderboardEntry;
+import com.statsboard.stat.StatKey;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
 
@@ -9,8 +10,17 @@ import java.util.List;
 import java.util.UUID;
 
 public class StatsboardNetworking {
-    /** S2C channel: server -> requesting client, carries both leaderboards at once. */
-    public static final Identifier LEADERBOARD_CHANNEL = new Identifier("statsboard", "leaderboard_data");
+    /** C2S: client asks for one stat's board. */
+    public static final Identifier REQUEST_BOARD = new Identifier("statsboard", "request_board");
+
+    /** S2C: one stat's board, either opening the screen or updating an open one. */
+    public static final Identifier BOARD_DATA = new Identifier("statsboard", "board_data");
+
+    /** C2S: retarget one column of a leaderboard block. */
+    public static final Identifier SET_BLOCK_STAT = new Identifier("statsboard", "set_block_stat");
+
+    /** S2C: open the picker for a leaderboard block the player just poked. */
+    public static final Identifier OPEN_PICKER = new Identifier("statsboard", "open_picker");
 
     public static void writeEntries(PacketByteBuf buf, List<LeaderboardEntry> entries) {
         buf.writeInt(entries.size());
@@ -47,5 +57,21 @@ public class StatsboardNetworking {
             list.add(new LeaderboardEntry(uuid, name, count, skinValue, skinSignature));
         }
         return list;
+    }
+
+    public static void writeKeys(PacketByteBuf buf, List<StatKey> keys) {
+        buf.writeInt(keys.size());
+        for (StatKey key : keys) {
+            key.write(buf);
+        }
+    }
+
+    public static List<StatKey> readKeys(PacketByteBuf buf) {
+        int size = buf.readInt();
+        List<StatKey> keys = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            keys.add(StatKey.read(buf));
+        }
+        return keys;
     }
 }

@@ -3,6 +3,8 @@ package com.statsboard.block;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import com.statsboard.mixin.PlayerEntityAccessor;
+import com.statsboard.stat.StatKey;
+import com.statsboard.stat.StatValueFormatter;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.network.OtherClientPlayerEntity;
@@ -14,6 +16,7 @@ import net.minecraft.client.world.ClientWorld;
 import org.joml.Matrix4f;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -24,9 +27,9 @@ import java.util.UUID;
  * they should look like normal 3D characters standing in the world.
  */
 public class LeaderboardBlockEntityRenderer implements BlockEntityRenderer<LeaderboardBlockEntity> {
-    private static final double DEATH_X = -1.0;
-    private static final double ADV_X = 2.0;
+    private static final double COLUMN_SPACING = 3.0;
     private static final double HEAD_TEXT_Y = 2.3;
+    private static final double LABEL_TEXT_Y = 2.6;
 
     private final TextRenderer textRenderer;
     private final Map<UUID, OtherClientPlayerEntity> entityCache = new HashMap<>();
@@ -38,19 +41,26 @@ public class LeaderboardBlockEntityRenderer implements BlockEntityRenderer<Leade
     @Override
     public void render(LeaderboardBlockEntity entity, float tickDelta, MatrixStack matrices,
                         VertexConsumerProvider vertexConsumers, int light, int overlay) {
-        drawPlayerModel(matrices, vertexConsumers, light, tickDelta,
-                entity.getTopDeathUuid(), entity.getTopDeathName(),
-                entity.getTopDeathSkinValue(), entity.getTopDeathSkinSignature(), DEATH_X, 0.0, 0.5);
-        drawPlayerModel(matrices, vertexConsumers, light, tickDelta,
-                entity.getTopAdvUuid(), entity.getTopAdvName(),
-                entity.getTopAdvSkinValue(), entity.getTopAdvSkinSignature(), ADV_X, 0.0, 0.5);
+        List<StatKey> columns = entity.getColumns();
+        int count = columns.size();
 
-        drawLine(matrices, vertexConsumers, light,
-                "\u2620 " + entity.getTopDeathName() + "  (" + entity.getTopDeathCount() + ")",
-                DEATH_X + 0.5, HEAD_TEXT_Y, 0.5, 0xFFFF5555);
-        drawLine(matrices, vertexConsumers, light,
-                "\u2605 " + entity.getTopAdvName() + "  (" + entity.getTopAdvCount() + ")",
-                ADV_X + 0.5, HEAD_TEXT_Y, 0.5, 0xFFFFD700);
+        for (int i = 0; i < count; i++) {
+            StatKey key = columns.get(i);
+            LeaderboardBlockEntity.Column column = entity.getColumn(i);
+            // Spread evenly about the block: one column centres on it, two sit
+            // at +/-1.5, three at -3 / 0 / +3.
+            double x = (i - (count - 1) / 2.0) * COLUMN_SPACING;
+
+            drawPlayerModel(matrices, vertexConsumers, light, tickDelta,
+                    column.uuid(), column.name(), column.skinValue(), column.skinSignature(), x, 0.0, 0.5);
+
+            drawLine(matrices, vertexConsumers, light,
+                    key.displayName().getString(),
+                    x + 0.5, LABEL_TEXT_Y, 0.5, 0xFFD4AF37);
+            drawLine(matrices, vertexConsumers, light,
+                    column.name() + "  (" + StatValueFormatter.format(key, column.value()) + ")",
+                    x + 0.5, HEAD_TEXT_Y, 0.5, 0xFFFFFFFF);
+        }
     }
 
     /** The two models stand well outside the block's own box, so never cull on it. */
