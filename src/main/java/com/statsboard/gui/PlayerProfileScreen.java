@@ -54,6 +54,12 @@ public class PlayerProfileScreen extends Screen {
     private static final int ROW_HEIGHT = 14;
     private static final int TABS_Y = 30;
     private static final int TAB_WIDTH = 90;
+
+    /** A player model is ~1.8 blocks tall, and drawEntity scales by block. */
+    private static final float PLAYER_BLOCKS_TALL = 1.8f;
+    private static final int MODEL_PADDING = 16;
+    private static final int MIN_MODEL_SIZE = 12;
+    private static final int MAX_MODEL_SIZE = 70;
     private static final int TAB_HEIGHT = 20;
     private static final int SEARCH_Y = 56;
     private static final int SEARCH_HEIGHT = 16;
@@ -361,19 +367,28 @@ public class PlayerProfileScreen extends Screen {
         context.enableScissor(x + 1, y + 1, x + width - 1, y + height - 1);
 
         int centerX = x + width / 2;
-        int baseY = y + height - 10;
-        int size = MathHelper.clamp(Math.min(width, height) - 30, 40, 100);
+
+        // drawEntity's "size" is a scale factor, not a pixel height: a player is
+        // about 1.8 blocks tall, so the drawn model comes out roughly 1.8x this.
+        // Deriving it from the panel keeps the figure inside its box at any GUI
+        // scale, where a fixed clamp would overflow on a short panel.
+        int fitsHeight = (int) ((height - MODEL_PADDING * 2) / PLAYER_BLOCKS_TALL);
+        int fitsWidth = width - MODEL_PADDING * 2;
+        int size = MathHelper.clamp(Math.min(fitsHeight, fitsWidth), MIN_MODEL_SIZE, MAX_MODEL_SIZE);
+
+        int modelHeight = (int) (size * PLAYER_BLOCKS_TALL);
+        int baseY = y + height / 2 + modelHeight / 2;
 
         boolean drewModel = false;
         if (use3DModel) {
             LivingEntity entity = getOrCreatePlayerEntity();
             if (entity != null) {
                 try {
-                    int modelTop = baseY - size;
-                    int centerY = (modelTop + baseY) / 2;
-                    float rotX = (float) Math.atan((centerX - mouseX) / 40.0);
-                    float rotY = (float) Math.atan((centerY - mouseY) / 40.0);
-                    InventoryScreen.drawEntity(context, centerX, baseY, size, rotX, rotY, entity);
+                    // Raw offsets, not angles: drawEntity applies its own
+                    // atan(v / 40) to whatever it is given.
+                    int centerY = baseY - modelHeight / 2;
+                    InventoryScreen.drawEntity(context, centerX, baseY, size,
+                            (float) (centerX - mouseX), (float) (centerY - mouseY), entity);
                     drewModel = true;
                 } catch (Throwable t) {
                     use3DModel = false;
